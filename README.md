@@ -18,11 +18,11 @@ Sistem menerapkan autentikasi berbasis peran (*Role-Based Access Control* / RBAC
 | No | Nama Lengkap | NIM | Peran Utama | Fokus Tanggung Jawab |
 |---|---|---|---|---|
 | 1 | Wira Hari Pratama | 241402111 | **Project Lead & Core Architecture** | Setup project Flutter, arsitektur folder, state management global, routing navigasi, dan standardisasi UI/Theme. |
-| 2 | Leondo Admiral Purba | 241402153 | **Frontend Dev (Auth & Profile)** | Implementasi UI & logika Autentikasi (Login/Register/Logout), validasi form email kampus, dan manajemen profil pengguna. |
-| 3 | Aldrik Noel Sianipar | 241402 | **Frontend Dev (Form Laporan & Hardware)** | Fitur pembuatan tiket aduan mahasiswa, integrasi kamera/galeri (`image_picker`), serta penandaan koordinat GPS (`geolocator`). |
-| 4 | Rafi Andara Nasution | 241402 | **Frontend Dev (Tracking & Feedback)** | Halaman riwayat aduan mahasiswa, visualisasi timeline status pengerjaan tiket, dan sistem konfirmasi/rating kepuasan. |
-| 5 | Vincent Christian Simbolon | 241402 | **Frontend Dev (Dashboard Teknisi/Admin)** | Antarmuka khusus staf: antrean tiket masuk, filter keluhan (kategori/urgensi), aksi update status, dan unggah foto bukti pengerjaan. |
-| 6 | Yosia Marcel Simanjuntak | 241402 | **BaaS / Database & Security Engineer** | Konfigurasi Supabase/Firebase, perancangan skema tabel/koleksi, pengaturan *Row Level Security* (RLS) hak akses role, dan manajemen Storage bucket. |
+| 2 | Leondo Admiral Purba | 241402053 | **Frontend Dev (Auth & Profile)** | Implementasi UI & logika Autentikasi (Login/Register/Logout), validasi form email kampus, dan manajemen profil pengguna. |
+| 3 | Aldrik Noel Sianipar | 241402049 | **Frontend Dev (Form Laporan & Hardware)** | Fitur pembuatan tiket aduan mahasiswa, integrasi kamera/galeri (`image_picker`), serta penandaan koordinat GPS (`geolocator`). |
+| 4 | Rafi Andara Nasution | 241402095 | **Frontend Dev (Tracking & Feedback)** | Halaman riwayat aduan mahasiswa, visualisasi timeline status pengerjaan tiket, dan sistem konfirmasi/rating kepuasan. |
+| 5 | Vincent Christian Simbolon | 241402039 | **Frontend Dev (Dashboard Teknisi/Admin)** | Antarmuka khusus staf: antrean tiket masuk, filter keluhan (kategori/urgensi), aksi update status, dan unggah foto bukti pengerjaan. |
+| 6 | Yosia Marcel Simanjuntak | 241402114 | **BaaS / Database & Security Engineer** | Konfigurasi Supabase/Firebase, perancangan skema tabel/koleksi, pengaturan *Row Level Security* (RLS) hak akses role, dan manajemen Storage bucket. |
 
 ---
 
