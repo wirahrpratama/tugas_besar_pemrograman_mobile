@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "239673598270",
+    "project_id": "sifasilitas-kampus",
+    "storage_bucket": "sifasilitas-kampus.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:239673598270:android:2591a725326ee2d22a8c6f",
+        "android_client_info": {
+          "package_name": "id.ac.kampus.sifasilitas"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBU03TqR9nfX-K_m-4gHVsdUKeKQ1gKNAM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
