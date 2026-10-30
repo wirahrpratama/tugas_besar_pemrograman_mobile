@@ -1,61 +1,211 @@
 # SiFasilitas (Campus Facility Care)
 
-> Aplikasi mobile pelaporan dan penanganan kerusakan fasilitas kampus berbasis multi-peran (*Mahasiswa* & *Admin/Teknisi*).
+> Sistem pelaporan dan penanganan kerusakan fasilitas kampus berbasis mobile dengan arsitektur multi-peran (*Pelapor*, *Admin Fasilitas*, dan *Teknisi*), didukung verifikasi berbasis QR Code, *smart triage* AI (Gemini), serta *state machine* pelacakan tiket secara terintegrasi.
 
 ---
 
-## 📱 Deskripsi Singkat
-**SiFasilitas** adalah aplikasi mobile berbasis Flutter yang menjembatani komunikasi antara mahasiswa dengan biro pemeliharaan sarana prasarana kampus. Aplikasi ini menyelesaikan masalah lambatnya penanganan keluhan dan ketiadaan transparansi status perbaikan fasilitas.
+## 📱 Deskripsi Proyek
+**SiFasilitas** adalah aplikasi mobile berbasis Flutter dan Google Firebase yang dirancang untuk mendigitalkan dan mengoptimalkan proses penanganan aduan sarana-prasarana kampus. Sistem ini menggantikan proses pelaporan manual dengan alur kerja yang transparan, terukur (berbasis SLA), dan terhindar dari duplikasi tiket.
 
-Sistem menerapkan autentikasi berbasis peran (*Role-Based Access Control* / RBAC):
-* **Mahasiswa:** Melaporkan keluhan fasilitas lengkap dengan foto fisik, penandaan lokasi/ruangan, serta memantau progres perbaikan secara *real-time*.
-* **Admin / Teknisi:** Menerima tiket aduan, memperbarui status pengerjaan (*Pending* ➔ *In Progress* ➔ *Resolved*), dan mengunggah foto bukti penyelesaian.
+Aplikasi menerapkan **Role-Based Access Control (RBAC)** dengan 3 peran utama:
+1. **Pelapor (Mahasiswa, Dosen, Staf):** Memindai QR Code lokasi fasilitas, mengambil foto kerusakan fisik, mendapatkan rekomendasi kategori dan prioritas otomatis via AI, serta memantau linimasa perbaikan tiket secara *real-time*.
+2. **Admin Fasilitas:** Memverifikasi tiket masuk, menolak aduan yang tidak relevan/valid (*Rejected*), memprioritaskan antrean, dan menugaskan tiket kepada teknisi lapangan yang bertugas (*Assigned*).
+3. **Teknisi Perbaikan:** Menerima penugasan tugas kerja, memperbarui status pengerjaan ke tahap pengerjaan (*In Progress*), serta menutup tiket (*Resolved*) dengan kewajiban melampirkan foto bukti hasil perbaikan.
 
 ---
 
-## 👥 Anggota Tim
+## 👥 Anggota Tim & Pembagian Tanggung Jawab
 
 | No | Nama Lengkap | NIM | Peran Utama | Fokus Tanggung Jawab |
 |---|---|---|---|---|
-| 1 | Wira Hari Pratama | 241402111 | **Project Lead & Core Architecture** | Setup project Flutter, arsitektur folder, state management global, routing navigasi, dan standardisasi UI/Theme. |
-| 2 | Leondo Admiral Purba | 241402053 | **Frontend Dev (Auth & Profile)** | Implementasi UI & logika Autentikasi (Login/Register/Logout), validasi form email kampus, dan manajemen profil pengguna. |
-| 3 | Aldrik Noel Sianipar | 241402049 | **Frontend Dev (Form Laporan & Hardware)** | Fitur pembuatan tiket aduan mahasiswa, integrasi kamera/galeri (`image_picker`), serta penandaan koordinat GPS (`geolocator`). |
-| 4 | Rafi Andara Nasution | 241402095 | **Frontend Dev (Tracking & Feedback)** | Halaman riwayat aduan mahasiswa, visualisasi timeline status pengerjaan tiket, dan sistem konfirmasi/rating kepuasan. |
-| 5 | Vincent Christian Simbolon | 241402039 | **Frontend Dev (Dashboard Teknisi/Admin)** | Antarmuka khusus staf: antrean tiket masuk, filter keluhan (kategori/urgensi), aksi update status, dan unggah foto bukti pengerjaan. |
-| 6 | Yosia Marcel Simanjuntak | 241402114 | **BaaS / Database & Security Engineer** | Konfigurasi Supabase/Firebase, perancangan skema tabel/koleksi, pengaturan *Row Level Security* (RLS) hak akses role, dan manajemen Storage bucket. |
+| 1 | Wira Hari Pratama | 241402111 | **Project Lead & Core Architecture** | Setup fondasi Flutter & Firebase, perancangan model entitas data, implementasi *state machine engine* & transaksi Firestore, serta standarisasi master data seeder. |
+| 2 | Leondo Admiral Purba | 241402053 | **Frontend Dev (Auth & RBAC)** | Implementasi UI & alur autentikasi (Firebase Auth), sistem validasi identitas (NIM/NIP), serta *role-based navigation gate* (Pelapor, Admin, Teknisi). |
+| 3 | Aldrik Noel Sianipar | 241402049 | **Frontend Dev (Reporting & Hardware)** | Antarmuka pembuatan tiket laporan, integrasi kamera & kompresi gambar (`image_picker`, `flutter_image_compress`), dan integrasi pemindai QR Code ruangan/aset (`mobile_scanner`). |
+| 4 | Rafi Andara Nasution | 241402095 | **Frontend Dev (Tracking & Timeline)** | Antarmuka riwayat aduan, visualisasi tahapan status tiket (*Reported* ➔ *Resolved*), log riwayat perubahan status (*audit trail*), serta konfirmasi penyelesaian oleh pelapor. |
+| 5 | Vincent Christian Simbolon | 241402039 | **Frontend Dev (Dashboard Admin/Teknisi)** | Dashboard manajemen antrean tiket masuk bagi Admin & Teknisi: filter kategori & urgensi, alur disposisi teknisi, serta form penyelesaian tiket berlampiran foto sesudah pengerjaan. |
+| 6 | Yosia Marcel Simanjuntak | 241402114 | **BaaS, AI Integration & Data Engineer** | Konfigurasi Cloud Firestore, integrasi *Smart AI Classifier* (Google Gemini 2.5 Flash & NLP Heuristic), logika *anti-duplikasi merge*, dan sistem *auto-upvoting* tiket. |
 
 ---
 
-## 🚀 Rencana Fitur
+## 🔄 Alur Siklus Hidup Tiket (State Machine)
 
-### 1. Autentikasi & Manajemen Sesi (Multi-Role)
-* **Login & Role-Based Routing:** Pintu masuk login tunggal yang secara otomatis mengarahkan antarmuka pengguna berdasarkan data profil (`role: mahasiswa` atau `role: teknisi/admin`).
-* **Registrasi Akun Mahasiswa:** Pembuatan akun dengan validasi email kampus.
+Siklus hidup setiap tiket laporan dikontrol oleh *state machine* ketat pada `ReportService` untuk menjamin integritas alur operasional:
 
-### 2. Antarmuka Mahasiswa (Pelapor)
-* **Form Buat Laporan (Create Ticket):** Input laporan kerusakan berdasarkan kategori (Kelistrikan, Sanitasi, AC/Pendingin, Audio/Proyektor, Fasilitas Kelas).
-* **Integrasi Kamera & Media:** Pengambilan foto bukti kerusakan langsung melalui kamera perangkat atau galeri.
-* **Geotagging / Penandaan Lokasi:** Perekaman koordinat lokasi pelapor (GPS) serta pemilihan nama gedung dan nomor ruangan.
-* **Pelacakan Tiket (Timeline Tracker):** Visualisasi linimasa status aduan (*Pending*, *Diverifikasi*, *Dikerjakan*, *Selesai*).
-* **Konfirmasi & Ulasan:** Memberi feedback atau rating kepuasan setelah fasilitas dinyatakan selesai diperbaiki.
+```mermaid
+stateDiagram-v2
+    [*] --> Reported: Pelapor membuat laporan baru
+    Reported --> Verified: Diverifikasi oleh Admin
+    Reported --> Rejected: Ditolak oleh Admin (tidak valid)
+    Verified --> Assigned: Admin menugaskan Teknisi
+    Verified --> Rejected: Ditolak oleh Admin
+    Assigned --> InProgress: Teknisi memulai pengerjaan
+    InProgress --> Resolved: Teknisi mengunggah bukti perbaikan
+    Resolved --> [*]
+    Rejected --> [*]
+```
 
-### 3. Antarmuka Teknisi / Admin (Pengelola)
-* **Daftar Tiket Masuk (Incoming Queue):** Dashboard tiket terpusat dengan filter kategori, lokasi, dan tingkat urgensi.
-* **Perbaruan Status Pekerjaan:** Aksi untuk mengubah status tiket secara berkala.
-* **Unggah Bukti Perbaikan:** Teknisi dapat melampirkan foto hasil perbaikan sebelum menutup tiket menjadi *Resolved*.
-
-### 4. Fitur Native & Hardware Mobile
-* **Kamera & File Access:** Menggunakan library `image_picker` untuk kompresi dan upload berkas bukti.
-* **Location Service (GPS):** Menggunakan `geolocator` untuk memvalidasi posisi pelapor saat berada di radius area kampus.
-* **Local Storage / Cache:** Penyimpanan data sementara untuk mempercepat rendering daftar riwayat tiket.
+### Penjelasan Status Tiket:
+* **`reported` (Reported / Menunggu Verifikasi):** Aduan berhasil dibuat oleh pelapor dan masuk ke dalam antrean sistem.
+* **`verified` (Verified / Terverifikasi Admin):** Admin fasilitas memvalidasi kelayakan fisik dan substansi aduan.
+* **`assigned` (Assigned / Teknisi Ditugaskan):** Admin menugaskan teknisi spesifik (`assigned_teknisi_uid`) untuk menangani masalah tersebut.
+* **`in_progress` (In Progress / Sedang Dikerjakan):** Teknisi mengonfirmasi bahwa penanganan di lapangan sedang berlangsung.
+* **`resolved` (Resolved / Selesai Diperbaiki):** Perbaikan tuntas dan teknisi mengunggah foto bukti penyelesaian (`foto_sesudah_url`).
+* **`rejected` (Rejected / Ditolak):** Laporan dibatalkan/ditolak oleh admin disertai alasan tertulis.
 
 ---
 
-## 🛠️ Tech Stack
+## 💡 Fitur Utama Sistem
 
-* **Framework:** Flutter (Dart)
-* **State Management:** Provider / Riverpod / Bloc
-* **Backend as a Service (BaaS):** Supabase / Firebase
-  * **Authentication:** BaaS Auth (Email & Password)
-  * **Database:** PostgreSQL (Supabase) / Firestore (Firebase)
-  * **Storage:** Bucket penyimpanan untuk foto kerusakan & perbaikan
+### 1. Smart Triage & AI Classifier (`AiClassifierService`)
+* Terhubung langsung dengan **Google Gemini 2.5 Flash API** untuk menganalisis deskripsi keluhan pengguna secara cerdas.
+* Otomatis mengidentifikasi kategori fasilitas (AC, Proyektor, Jaringan, Lampu, Toilet, Ruang Kelas), tingkat prioritas (*rendah*, *sedang*, *tinggi*, *darurat*), dan kalkulasi target waktu SLA.
+* Dilengkapi mekanisme **Offline NLP Heuristic Fallback** sehingga klasifikasi tetap berjalan normal meskipun perangkat sedang tanpa koneksi internet atau kuota API habis.
+
+### 2. QR Code Scanner Ruangan & Aset (`mobile_scanner`)
+* Menggantikan GPS konvensional yang kerap tidak presisi di area dalam gedung (*indoor*) dan bertingkat.
+* Mahasiswa memindai QR Code yang tertera pada pintu ruangan atau stiker aset (contoh: `QR-GDA-101` untuk Gedung A R.101) untuk memastikan akurasi lokasi fasilitas tanpa salah ketik.
+
+### 3. Deteksi Anti-Duplikasi & Auto-Upvoting
+* Sistem secara transaksional (`Firestore Transaction`) memeriksa apakah sudah terdapat tiket aktif pada lokasi dan kategori yang sama.
+* Jika keluhan sudah pernah dilaporkan dan masih berstatus aktif (*Reported*, *Verified*, *Assigned*, atau *In Progress*), laporan baru otomatis digabungkan (*merged*) dan akun pelapor didaftarkan sebagai pendukung tiket tersebut (+1 Upvote).
+* Hal ini mencegah penumpukan tiket ganda untuk satu kerusakan yang sama serta menaikkan visibilitas prioritas penanganan.
+
+### 4. SLA (Service Level Agreement) Tracking
+Setiap kategori fasilitas memiliki target batas waktu penanganan otomatis (`sla_deadline`):
+* ⚡ **Lampu & Kelistrikan:** Darurat (Target SLA: 2 Jam)
+* ❄️ **AC & Pendingin Ruangan:** Tinggi (Target SLA: 6 Jam)
+* 📽️ **Proyektor & Presentasi:** Tinggi (Target SLA: 4 Jam)
+* 📶 **Jaringan Wi-Fi & LAN:** Tinggi (Target SLA: 4 Jam)
+* 🚰 **Toilet & Sanitasi:** Sedang (Target SLA: 8 Jam)
+* 🪑 **Ruang Kelas (Inventaris):** Rendah (Target SLA: 24 Jam)
+
+### 5. Atomic Audit Trail Logging
+Setiap mutasi status laporan secara otomatis mencatat jejak audit ke dalam sub-koleksi `reports/{reportId}/logs` yang mendokumentasikan:
+* ID & nama aktor pengubah status
+* Peran aktor (*Admin*, *Teknisi*, atau *Pelapor*)
+* Status sebelum dan status sesudah
+* Catatan pengerjaan atau verifikasi
+* *Timestamp* server yang tidak dapat dimanipulasi
+
+---
+
+## 🗄️ Skema Basis Data (Cloud Firestore)
+
+```text
+Firestore Root
+├── categories/ {categoryId}
+│   ├── id: string (e.g. "cat_ac")
+│   ├── nama_objek: string
+│   ├── prioritas_default: string ("rendah" | "sedang" | "tinggi" | "darurat")
+│   └── target_sla_jam: number
+│
+├── locations/ {locationId}
+│   ├── id: string (e.g. "loc_r101")
+│   ├── kode_ruangan: string (e.g. "QR-GDA-101")
+│   ├── nama_gedung: string
+│   ├── nama_ruangan: string
+│   └── lantai: number
+│
+└── reports/ {reportId}
+    ├── ticket_number: string (e.g. "TKT-20261030-XXXXXX")
+    ├── reporter_uid: string
+    ├── reporter_name: string
+    ├── reporter_sub_role: string ("mahasiswa" | "dosen" | "staf")
+    ├── location_id: string
+    ├── kode_ruangan: string
+    ├── nama_gedung: string
+    ├── nama_ruangan: string
+    ├── category_id: string
+    ├── nama_objek: string
+    ├── prioritas: string
+    ├── target_sla_jam: number
+    ├── deskripsi: string
+    ├── foto_sebelum_url: string
+    ├── foto_sesudah_url: string | null
+    ├── status: string ("reported" | "verified" | "assigned" | "in_progress" | "resolved" | "rejected")
+    ├── assigned_teknisi_uid: string | null
+    ├── assigned_teknisi_nama: string | null
+    ├── upvotes_count: number
+    ├── confirmed_by_reporter: boolean
+    ├── created_at: Timestamp
+    ├── sla_deadline: Timestamp
+    ├── updated_at: Timestamp
+    │
+    ├── [subcollection] supporters/ {userUid}
+    │   ├── user_uid: string
+    │   ├── nama: string
+    │   └── created_at: Timestamp
+    │
+    └── [subcollection] logs/ {logId}
+        ├── actor_uid: string
+        ├── actor_nama: string
+        ├── actor_role: string
+        ├── status_lama: string | null
+        ├── status_baru: string
+        ├── catatan: string
+        └── created_at: Timestamp
+```
+
+---
+
+## 🛠️ Tech Stack & Dependensi
+
+* **Platform & SDK:** Flutter SDK `^3.9.2` (Dart)
+* **Backend as a Service (BaaS):**
+  * `firebase_core: ^5.1.0` - Inisialisasi Firebase App
+  * `firebase_auth: ^7.0.1` - Autentikasi Pengguna
+  * `cloud_firestore: ^7.1.0` - Database Real-Time NoSQL
+* **State Management:**
+  * `provider: ^6.1.5+1` - Pengelolaan State Aplikasi
+* **Hardware & Native Integration:**
+  * `mobile_scanner: ^7.4.2` - Pemindai Barcode/QR Code Ruangan & Aset
+  * `image_picker: ^1.2.2` - Pengambilan Gambar dari Kamera & Galeri
+  * `flutter_image_compress: ^2.5.1` - Kompresi Foto sebelum Pengunggahan
+* **Network & Intelligence:**
+  * `http: ^1.6.0` - Komunikasi REST API ke Google Gemini 2.5 Flash
+  * `intl: ^0.20.3` - Standardisasi Format Waktu & Penomoran Tiket
+
+---
+
+## 📁 Struktur Direktori Kode (`lib/`)
+
+```
+lib/
+├── firebase_options.dart         # Konfigurasi platform Firebase otomatis
+├── main.dart                     # Entry point aplikasi Flutter
+├── models/
+│   └── report_models.dart        # Model data AppUser, CampusLocation, FacilityCategory, & Enums
+└── services/
+    ├── ai_classifier_service.dart # Layanan klasifikasi AI (Gemini 2.5 Flash & Offline Heuristics)
+    ├── firebase_seeder.dart       # Seeder master data (6 Kategori & 10 Lokasi Kampus)
+    └── report_service.dart        # Engine State Machine, Anti-Duplikasi, & Transaksi Laporan
+```
+
+---
+
+## 🚀 Panduan Memulai (Getting Started)
+
+### 1. Prasyarat
+* [Flutter SDK](https://docs.flutter.dev/get-started/install) (versi minimal 3.9.0)
+* Android Studio / Xcode dengan emulator atau perangkat fisik (diperlukan kamera untuk QR Scanner)
+* Akun Firebase yang sudah terhubung dengan `google-services.json` (Android) dan `GoogleService-Info.plist` (iOS)
+
+### 2. Instalasi Dependensi
+Jalankan perintah berikut di terminal root proyek:
+```bash
+flutter pub get
+```
+
+### 3. Pengisian Data Awal (Master Data Seeder)
+Aplikasi menyediakan *utility seeder* otomatis untuk menginisialisasi 6 kategori fasilitas kampus dan 10 data lokasi/QR code ruangan:
+```dart
+import 'services/firebase_seeder.dart';
+
+// Panggil fungsi ini saat inisialisasi awal aplikasi:
+await FirebaseSeeder().seedMasterDataIfNeeded();
+```
+
+### 4. Menjalankan Aplikasi
+```bash
+flutter run
+```
