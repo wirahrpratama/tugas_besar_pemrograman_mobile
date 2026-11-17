@@ -54,3 +54,15 @@ key.properties
 *.keystore
 GoogleService-Info.plist
 service-account*.json
+*-firebase-adminsdk-*.json
+.env.*
+!.env.example
+env.json
+secrets*.json
+*.pem
+*.p12
+*.p8
+*.mobileprovision
+
+# Cache lokal Firebase CLI
+.firebase/

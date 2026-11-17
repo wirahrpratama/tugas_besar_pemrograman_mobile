@@ -16,6 +16,16 @@ class ReportService {
   static String activeTicketKey(String locationId, String categoryId) =>
       '${locationId}_$categoryId';
 
+  /// Nomor tiket `TKT-YYYYMMDD-XXXXXX`: tanggal [date] (jam perangkat) diikuti
+  /// 6 karakter pertama ID dokumen laporan [reportId].
+  static String ticketNumberFor(DateTime date, String reportId) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    final suffix = reportId.length > 6 ? reportId.substring(0, 6) : reportId;
+    return 'TKT-$y$m$d-$suffix';
+  }
+
   /// Validasi State Machine sesuai Slide Opsi 5:
   /// reported -> verified -> assigned -> in_progress -> resolved
   static bool isValidTransition(ReportStatus current, ReportStatus next) {
@@ -70,6 +80,9 @@ class ReportService {
   /// Pengecekan duplikat dan pembuatan tiket terjadi dalam SATU transaksi
   /// lewat dokumen kunci `active_tickets/{locationId}_{categoryId}`, sehingga
   /// dua pelapor bersamaan tidak bisa membuat dua tiket aktif yang sama.
+  ///
+  /// Semua `created_at`/`updated_at` memakai `serverTimestamp()`. Hanya
+  /// `sla_deadline` dan tanggal pada nomor tiket yang berasal dari jam perangkat.
   Future<Map<String, dynamic>> submitReport({
     required AppUser reporter,
     required CampusLocation location,
@@ -80,13 +93,12 @@ class ReportService {
   }) async {
     final now = DateTime.now();
     final slaDeadline = now.add(Duration(hours: category.targetSlaJam));
-    final ticketNumber =
-        'TKT-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.millisecondsSinceEpoch.toString().substring(8)}';
 
     final lockRef = _db
         .collection('active_tickets')
         .doc(activeTicketKey(location.id, category.id));
     final reportRef = _db.collection('reports').doc();
+    final ticketNumber = ticketNumberFor(now, reportRef.id);
     final logRef = reportRef.collection('logs').doc();
     final supporterRef = reportRef.collection('supporters').doc(reporter.uid);
 
@@ -172,15 +184,15 @@ class ReportService {
         'assigned_teknisi_nama': null,
         'upvotes_count': 1,
         'confirmed_by_reporter': false,
-        'created_at': Timestamp.fromDate(now),
+        'created_at': FieldValue.serverTimestamp(),
         'sla_deadline': Timestamp.fromDate(slaDeadline),
-        'updated_at': Timestamp.fromDate(now),
+        'updated_at': FieldValue.serverTimestamp(),
       });
 
       transaction.set(supporterRef, {
         'user_uid': reporter.uid,
         'nama': reporter.nama,
-        'created_at': Timestamp.fromDate(now),
+        'created_at': FieldValue.serverTimestamp(),
       });
 
       transaction.set(logRef, {
@@ -190,14 +202,14 @@ class ReportService {
         'status_lama': null,
         'status_baru': ReportStatus.reported.value,
         'catatan': 'Laporan awal dibuat melalui aplikasi.',
-        'created_at': Timestamp.fromDate(now),
+        'created_at': FieldValue.serverTimestamp(),
       });
 
       transaction.set(lockRef, {
         'report_id': reportRef.id,
         'location_id': location.id,
         'category_id': category.id,
-        'created_at': Timestamp.fromDate(now),
+        'created_at': FieldValue.serverTimestamp(),
       });
 
       return {
