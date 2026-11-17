@@ -11,12 +11,16 @@ class RoleHomeScaffold extends StatelessWidget {
     required this.title,
     required this.icon,
     required this.placeholderText,
+    this.extraContent = const <Widget>[],
   });
 
   final AppUser user;
   final String title;
   final IconData icon;
   final String placeholderText;
+
+  /// Widget tambahan di bawah teks placeholder (mis. aksi khusus peran).
+  final List<Widget> extraContent;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +39,7 @@ class RoleHomeScaffold extends StatelessWidget {
         ],
       ),
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -45,6 +49,7 @@ class RoleHomeScaffold extends StatelessWidget {
               Text('Halo, ${user.nama}', style: theme.textTheme.titleLarge),
               const SizedBox(height: 8),
               Text(placeholderText, textAlign: TextAlign.center),
+              ...extraContent,
             ],
           ),
         ),

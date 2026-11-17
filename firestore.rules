@@ -1,0 +1,304 @@
+rules_version = '2';
+
+// Firestore Security Rules SiFasilitas.
+// Skema mengikuti README.md dan lib/services/report_service.dart.
+// Prinsip: tolak semuanya secara default, lalu buka hanya yang dibutuhkan.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------
+    // Fungsi bantu
+    // ---------------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    // Role diambil dari dokumen users/{uid}, BUKAN dari data kiriman klien.
+    // Jika field role tidak ada, dianggap 'pelapor' (sama seperti AppUser.fromMap).
+    function roleOf(uid) {
+      return get(userPath(uid)).data.get('role', 'pelapor');
+    }
+
+    function hasRole(role) {
+      return signedIn()
+          && exists(userPath(request.auth.uid))
+          && roleOf(request.auth.uid) == role;
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isTeknisi() {
+      return hasRole('teknisi');
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // Pastikan uid yang akan ditugaskan memang akun berperan teknisi.
+    function isValidTeknisi(uid) {
+      return uid is string
+          && uid.size() > 0
+          && exists(userPath(uid))
+          && roleOf(uid) == 'teknisi';
+    }
+
+    // ---------------------------------------------------------------
+    // categories & locations: data master.
+    // Baca: semua pengguna yang login. Tulis: hanya admin (role dibaca dari
+    // users/{uid}), dipakai aksi manual "Isi Data Master" di dashboard admin
+    // (FirebaseSeeder). Data juga bisa diisi lewat Console / Admin SDK.
+    // ---------------------------------------------------------------
+
+    match /categories/{categoryId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /locations/{locationId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------
+    // users/{uid}
+    // ---------------------------------------------------------------
+
+    match /users/{uid} {
+      // Pengguna membaca profilnya sendiri; admin membaca semua
+      // (dibutuhkan untuk memilih teknisi saat disposisi).
+      allow read: if isOwner(uid) || isAdmin();
+
+      // Pendaftaran mandiri hanya boleh sebagai 'pelapor' dengan sub_role
+      // mahasiswa/dosen/staf (sama dengan AuthService.pelaporSubRoles).
+      // Akun admin/teknisi harus diset lewat Console atau Admin SDK.
+      allow create: if isOwner(uid)
+          && request.resource.data.get('role', 'pelapor') == 'pelapor'
+          && request.resource.data.get('sub_role', null)
+             in ['mahasiswa', 'dosen', 'staf'];
+
+      // Pengguna TIDAK boleh mengubah field role maupun sub_role miliknya
+      // sendiri (sub_role dikunci agar batasan saat pendaftaran tidak bisa
+      // dilewati lewat update). Admin boleh mengubah profil/role akun lain
+      // (bukan akunnya sendiri).
+      allow update: if (isOwner(uid)
+              && request.resource.data.get('role', 'pelapor')
+                 == resource.data.get('role', 'pelapor')
+              && request.resource.data.get('sub_role', null)
+                 == resource.data.get('sub_role', null))
+          || (isAdmin() && request.auth.uid != uid);
+
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------
+    // active_tickets/{locationId}_{categoryId}
+    // Dokumen kunci anti-duplikasi: menunjuk satu tiket aktif per
+    // lokasi + kategori. Dibuat bersama tiket baru, dihapus saat tiket
+    // resolved/rejected (lihat ReportService).
+    // ---------------------------------------------------------------
+
+    match /active_tickets/{ticketKey} {
+
+      function reportPathOf(reportId) {
+        return /databases/$(database)/documents/reports/$(reportId);
+      }
+
+      // Kunci baru/pengganti hanya sah jika menunjuk tiket yang dibuat
+      // pengguna ini dalam operasi yang sama, dan ID-nya cocok dengan
+      // lokasi + kategori tiket tersebut.
+      function pointsToNewOwnReport() {
+        let d = request.resource.data;
+        return signedIn()
+            && d.report_id is string
+            && !exists(reportPathOf(d.report_id))
+            && existsAfter(reportPathOf(d.report_id))
+            && getAfter(reportPathOf(d.report_id)).data.reporter_uid == request.auth.uid
+            && getAfter(reportPathOf(d.report_id)).data.status == 'reported'
+            && ticketKey == getAfter(reportPathOf(d.report_id)).data.location_id
+                + '_' + getAfter(reportPathOf(d.report_id)).data.category_id;
+      }
+
+      allow read: if signedIn();
+      allow create: if pointsToNewOwnReport();
+
+      // Menimpa kunci basi: hanya jika tiket lama sudah hilang atau selesai.
+      allow update: if pointsToNewOwnReport()
+          && (!exists(reportPathOf(resource.data.get('report_id', '_')))
+              || get(reportPathOf(resource.data.get('report_id', '_'))).data.status
+                 in ['resolved', 'rejected']);
+
+      // Menghapus kunci: hanya bersamaan dengan tiketnya menjadi resolved/rejected.
+      allow delete: if signedIn()
+          && getAfter(reportPathOf(resource.data.report_id)).data.status
+             in ['resolved', 'rejected'];
+    }
+
+    // ---------------------------------------------------------------
+    // reports/{reportId}
+    // ---------------------------------------------------------------
+
+    match /reports/{reportId} {
+
+      function reportPath() {
+        return /databases/$(database)/documents/reports/$(reportId);
+      }
+
+      function supporterPath(uid) {
+        return /databases/$(database)/documents/reports/$(reportId)/supporters/$(uid);
+      }
+
+      // Field yang berubah pada update ini.
+      function changedKeys() {
+        return request.resource.data.diff(resource.data).affectedKeys();
+      }
+
+      // Pelapor membuat tiket baru hanya atas namanya sendiri,
+      // dengan kondisi awal yang baku (sesuai ReportService.submitReport).
+      function isValidNewReport() {
+        let d = request.resource.data;
+        return signedIn()
+            && exists(userPath(request.auth.uid))
+            && d.reporter_uid == request.auth.uid
+            && d.status == 'reported'
+            && d.upvotes_count == 1
+            && d.get('assigned_teknisi_uid', null) == null
+            && d.get('assigned_teknisi_nama', null) == null
+            && d.get('foto_sesudah_url', null) == null
+            && d.confirmed_by_reporter == false
+            // Pelapor awal wajib tercatat sebagai supporter dalam operasi yang sama.
+            && existsAfter(supporterPath(request.auth.uid));
+      }
+
+      // Admin: reported->verified|rejected, verified->assigned|rejected.
+      function isAdminStatusUpdate() {
+        let oldData = resource.data;
+        let newData = request.resource.data;
+        return isAdmin() && (
+          (oldData.status == 'reported'
+            && newData.status in ['verified', 'rejected']
+            && changedKeys().hasOnly(['status', 'updated_at']))
+          || (oldData.status == 'verified'
+            && newData.status == 'rejected'
+            && changedKeys().hasOnly(['status', 'updated_at']))
+          || (oldData.status == 'verified'
+            && newData.status == 'assigned'
+            && changedKeys().hasOnly(['status', 'updated_at',
+                'assigned_teknisi_uid', 'assigned_teknisi_nama'])
+            && isValidTeknisi(newData.get('assigned_teknisi_uid', null)))
+        );
+      }
+
+      // Teknisi: hanya tiket yang ditugaskan kepadanya,
+      // assigned->in_progress->resolved (resolved wajib foto sesudah).
+      function isTeknisiStatusUpdate() {
+        let oldData = resource.data;
+        let newData = request.resource.data;
+        return isTeknisi()
+            && oldData.get('assigned_teknisi_uid', null) == request.auth.uid
+            && changedKeys().hasOnly(['status', 'updated_at', 'foto_sesudah_url'])
+            && (
+              (oldData.status == 'assigned' && newData.status == 'in_progress')
+              || (oldData.status == 'in_progress'
+                && newData.status == 'resolved'
+                && newData.get('foto_sesudah_url', null) is string
+                && newData.foto_sesudah_url.size() > 0)
+            );
+      }
+
+      // Auto-upvote (merge duplikat): hanya +1, hanya pada tiket aktif, dan
+      // hanya jika supporter milik pengguna dibuat dalam operasi yang sama.
+      function isUpvoteUpdate() {
+        return signedIn()
+            && changedKeys().hasOnly(['upvotes_count', 'updated_at'])
+            && request.resource.data.upvotes_count == resource.data.upvotes_count + 1
+            && resource.data.status in ['reported', 'verified', 'assigned', 'in_progress']
+            && !exists(supporterPath(request.auth.uid))
+            && existsAfter(supporterPath(request.auth.uid));
+      }
+
+      // Pelapor asli mengonfirmasi tiket yang sudah resolved.
+      function isReporterConfirmUpdate() {
+        return isOwner(resource.data.reporter_uid)
+            && changedKeys().hasOnly(['confirmed_by_reporter', 'updated_at'])
+            && resource.data.status == 'resolved'
+            && request.resource.data.confirmed_by_reporter == true;
+      }
+
+      // Log wajib atas nama pemanggil sendiri dengan role aslinya (dari
+      // users/{uid}), created_at wajib waktu server (serverTimestamp()), dan
+      // status_baru wajib sama dengan status tiket setelah operasi.
+      function isOwnLog() {
+        let d = request.resource.data;
+        return signedIn()
+            && exists(userPath(request.auth.uid))
+            && d.actor_uid == request.auth.uid
+            && d.actor_role == roleOf(request.auth.uid)
+            && d.created_at == request.time
+            && d.status_baru == getAfter(reportPath()).data.status;
+      }
+
+      // Log awal: dibuat bersama tiketnya, oleh pelapor yang membuat tiket itu.
+      function isInitialLog() {
+        return isOwnLog()
+            && !exists(reportPath())
+            && request.resource.data.get('status_lama', null) == null
+            && request.resource.data.status_baru == 'reported'
+            && getAfter(reportPath()).data.reporter_uid == request.auth.uid;
+      }
+
+      // Log perubahan status: status benar-benar berubah dalam operasi yang
+      // sama, dan aktor berwenang atas status baru (cermin
+      // ReportService.canChangeStatus):
+      // - verified / rejected / assigned : admin
+      // - in_progress / resolved         : teknisi yang ditugaskan di tiket
+      function isStatusChangeLog() {
+        let d = request.resource.data;
+        return isOwnLog()
+            && exists(reportPath())
+            && d.get('status_lama', null) == get(reportPath()).data.status
+            && d.status_lama != d.status_baru
+            && (
+              (d.status_baru in ['verified', 'rejected', 'assigned']
+                && isAdmin())
+              || (d.status_baru in ['in_progress', 'resolved']
+                && isTeknisi()
+                && get(reportPath()).data.get('assigned_teknisi_uid', null)
+                   == request.auth.uid)
+            );
+      }
+
+      allow read: if signedIn();
+      allow create: if isValidNewReport();
+      allow update: if isAdminStatusUpdate()
+          || isTeknisiStatusUpdate()
+          || isUpvoteUpdate()
+          || isReporterConfirmUpdate();
+      allow delete: if false;
+
+      // supporters/{uid}: dokumen milik pengguna sendiri, hanya dibuat sekali.
+      match /supporters/{supporterUid} {
+        allow read: if signedIn();
+        allow create: if isOwner(supporterUid)
+            && request.resource.data.user_uid == request.auth.uid
+            && existsAfter(reportPath());
+        allow update, delete: if false;
+      }
+
+      // logs/{logId}: audit trail, hanya boleh dibuat (immutable), dan hanya
+      // oleh aktor yang berwenang (lihat isInitialLog / isStatusChangeLog).
+      match /logs/{logId} {
+        allow read: if signedIn();
+        allow create: if isInitialLog() || isStatusChangeLog();
+        allow update, delete: if false;
+      }
+    }
+  }
+}
