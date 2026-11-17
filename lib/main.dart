@@ -4,7 +4,11 @@ import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
 import 'screens/auth_gate.dart';
+import 'services/ai_classifier_service.dart';
 import 'services/auth_service.dart';
+import 'services/photo_store.dart';
+import 'services/report_repository.dart';
+import 'services/report_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,7 +22,15 @@ class SiFasilitasApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      providers: [Provider<AuthService>(create: (_) => AuthService())],
+      providers: [
+        Provider<AuthService>(create: (_) => AuthService()),
+        Provider<ReportService>(create: (_) => ReportService()),
+        Provider<ReportRepository>(create: (_) => ReportRepository()),
+        Provider<PhotoStore>(create: (_) => FirestorePhotoStore.shared),
+        Provider<AiClassifierService>(
+          create: (_) => const AiClassifierService(),
+        ),
+      ],
       child: MaterialApp(
         title: 'SiFasilitas',
         debugShowCheckedModeBanner: false,
