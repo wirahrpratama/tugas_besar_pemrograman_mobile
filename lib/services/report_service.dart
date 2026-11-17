@@ -2,7 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/report_models.dart';
 
 class ReportService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  ReportService({FirebaseFirestore? firestore}) : _dbOverride = firestore;
+
+  final FirebaseFirestore? _dbOverride;
+
+  FirebaseFirestore get _db => _dbOverride ?? FirebaseFirestore.instance;
 
   /// Nilai status (string Firestore) yang dianggap tiket masih aktif.
   static const List<String> _activeStatusValues = [
@@ -28,6 +32,7 @@ class ReportService {
 
   /// Validasi State Machine sesuai Slide Opsi 5:
   /// reported -> verified -> assigned -> in_progress -> resolved
+  /// serta resolved -> in_progress (hanya lewat [confirmResolution]).
   static bool isValidTransition(ReportStatus current, ReportStatus next) {
     if (next == ReportStatus.rejected &&
         (current == ReportStatus.reported || current == ReportStatus.verified)) {
@@ -43,15 +48,19 @@ class ReportService {
       case ReportStatus.inProgress:
         return next == ReportStatus.resolved;
       case ReportStatus.resolved:
+        return next == ReportStatus.inProgress;
       case ReportStatus.rejected:
         return false;
     }
   }
 
-  /// Tabel peran perubahan status:
+  /// Tabel peran perubahan status lewat [updateReportStatus]:
   /// - verified / rejected / assigned : hanya admin
   /// - in_progress / resolved         : hanya teknisi yang ditugaskan di tiket
   /// - reported                       : tidak bisa di-set siapa pun
+  ///
+  /// Pengembalian `resolved -> in_progress` hanya melalui [confirmResolution]
+  /// oleh pelapor asli.
   /// [currentAssignedUid] adalah assigned_teknisi_uid pada tiket saat ini.
   static bool canChangeStatus({
     required UserRole role,
@@ -93,6 +102,10 @@ class ReportService {
   }) async {
     final now = DateTime.now();
     final slaDeadline = now.add(Duration(hours: category.targetSlaJam));
+    final rawPriority = aiSuggestedPriority?.trim();
+    final prioritas = (rawPriority != null && rawPriority.isNotEmpty)
+        ? rawPriority.toLowerCase()
+        : category.prioritasDefault;
 
     final lockRef = _db
         .collection('active_tickets')
@@ -150,6 +163,7 @@ class ReportService {
 
         transaction.update(existingRef, {
           'upvotes_count': FieldValue.increment(1),
+          'supporter_uids': FieldValue.arrayUnion(<String>[reporter.uid]),
           'updated_at': FieldValue.serverTimestamp(),
         });
 
@@ -174,7 +188,8 @@ class ReportService {
         'nama_ruangan': location.namaRuangan,
         'category_id': category.id,
         'nama_objek': category.namaObjek,
-        'prioritas': aiSuggestedPriority ?? category.prioritasDefault,
+        'prioritas': prioritas,
+        'prioritas_rank': Report.priorityRankFor(prioritas),
         'target_sla_jam': category.targetSlaJam,
         'deskripsi': deskripsi,
         'foto_sebelum_url': fotoSebelumUrl,
@@ -183,6 +198,7 @@ class ReportService {
         'assigned_teknisi_uid': null,
         'assigned_teknisi_nama': null,
         'upvotes_count': 1,
+        'supporter_uids': <String>[reporter.uid],
         'confirmed_by_reporter': false,
         'created_at': FieldValue.serverTimestamp(),
         'sla_deadline': Timestamp.fromDate(slaDeadline),
@@ -259,7 +275,8 @@ class ReportService {
         throw Exception('Laporan tidak ditemukan.');
       }
 
-      final currentStatus = ReportStatus.fromString((data['status'] ?? 'reported').toString());
+      final currentStatus =
+          ReportStatus.fromString((data['status'] ?? 'reported').toString());
 
       // ---- Otorisasi berdasarkan tabel peran ----
       final currentAssignedUid = data['assigned_teknisi_uid'] as String?;
@@ -274,6 +291,13 @@ class ReportService {
         );
       }
 
+      if (currentStatus == ReportStatus.resolved &&
+          newStatus == ReportStatus.inProgress) {
+        throw Exception(
+          '403 Forbidden: Pengembalian status dari resolved ke in_progress hanya dapat dilakukan melalui konfirmasi pelapor.',
+        );
+      }
+
       if (!isValidTransition(currentStatus, newStatus)) {
         throw Exception(
           '422 Transisi Ilegal: Tidak dapat mengubah status dari ${currentStatus.value} langsung ke ${newStatus.value}.',
@@ -282,37 +306,50 @@ class ReportService {
 
       // ---- Validasi parameter ----
       if (newStatus == ReportStatus.rejected && catatan.trim().isEmpty) {
-        throw Exception('422 Validasi Gagal: Alasan penolakan (catatan) wajib diisi.');
+        throw Exception(
+          '422 Validasi Gagal: Alasan penolakan (catatan) wajib diisi.',
+        );
       }
 
       if (newStatus != ReportStatus.assigned && assignedTeknisiUid != null) {
-        throw Exception('422 Validasi Gagal: Teknisi hanya dapat dipilih saat status diubah ke Assigned.');
+        throw Exception(
+          '422 Validasi Gagal: Teknisi hanya dapat dipilih saat status diubah ke Assigned.',
+        );
       }
 
       String? teknisiNama;
       if (newStatus == ReportStatus.assigned) {
         if (!hasTeknisiUid) {
-          throw Exception('422 Validasi Gagal: Wajib memilih Teknisi saat mengubah status ke Assigned.');
+          throw Exception(
+            '422 Validasi Gagal: Wajib memilih Teknisi saat mengubah status ke Assigned.',
+          );
         }
         final teknisiData = teknisiSnap?.data();
         if (teknisiSnap == null || !teknisiSnap.exists || teknisiData == null) {
-          throw Exception('422 Validasi Gagal: Teknisi yang dipilih tidak ditemukan.');
+          throw Exception(
+            '422 Validasi Gagal: Teknisi yang dipilih tidak ditemukan.',
+          );
         }
         final teknisi = AppUser.fromMap(assignedTeknisiUid, teknisiData);
         if (teknisi.role != UserRole.teknisi) {
-          throw Exception('422 Validasi Gagal: Pengguna yang dipilih bukan berperan Teknisi.');
+          throw Exception(
+            '422 Validasi Gagal: Pengguna yang dipilih bukan berperan Teknisi.',
+          );
         }
         teknisiNama = teknisi.nama;
       }
 
       if (newStatus == ReportStatus.resolved &&
           (fotoSesudahUrl == null || fotoSesudahUrl.isEmpty)) {
-        throw Exception('422 Validasi Gagal: Teknisi wajib mengunggah Foto Sesudah perbaikan sebelum menutup tiket ke Resolved.');
+        throw Exception(
+          '422 Validasi Gagal: Teknisi wajib mengunggah Foto Sesudah perbaikan sebelum menutup tiket ke Resolved.',
+        );
       }
 
       // Dokumen kunci dibaca (bila perlu) sebelum penulisan apa pun.
       DocumentReference<Map<String, dynamic>>? lockToDelete;
-      if (newStatus == ReportStatus.resolved || newStatus == ReportStatus.rejected) {
+      if (newStatus == ReportStatus.resolved ||
+          newStatus == ReportStatus.rejected) {
         final lockRef = _db.collection('active_tickets').doc(
               activeTicketKey(
                 (data['location_id'] ?? '').toString(),
@@ -355,6 +392,130 @@ class ReportService {
         'status_lama': currentStatus.value,
         'status_baru': newStatus.value,
         'catatan': catatan,
+        'created_at': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  /// Konfirmasi penyelesaian perbaikan oleh pelapor asli pada tiket `resolved`.
+  ///
+  /// - Jika [diterima] == `true`: menandai `confirmed_by_reporter = true` dan
+  ///   mencatat log konfirmasi (`resolved -> resolved`).
+  /// - Jika [diterima] == `false`: [catatan] wajib diisi; status dikembalikan
+  ///   ke `in_progress`, kunci `active_tickets` dipulihkan bila slot masih kosong,
+  ///   dan log penolakan (`resolved -> in_progress`) dicatat atomik.
+  Future<void> confirmResolution(
+    String reportId,
+    String actorUid, {
+    required bool diterima,
+    String? catatan,
+  }) async {
+    final reportRef = _db.collection('reports').doc(reportId);
+    final actorRef = _db.collection('users').doc(actorUid);
+
+    await _db.runTransaction((transaction) async {
+      // ---- Semua pembacaan dilakukan lebih dulu ----
+      final actorSnap = await transaction.get(actorRef);
+      final snap = await transaction.get(reportRef);
+
+      final actorData = actorSnap.data();
+      if (!actorSnap.exists || actorData == null) {
+        throw Exception('403 Forbidden: Akun pengguna tidak ditemukan.');
+      }
+      final actor = AppUser.fromMap(actorUid, actorData);
+
+      final data = snap.data();
+      if (!snap.exists || data == null) {
+        throw Exception('Laporan tidak ditemukan.');
+      }
+
+      if (data['reporter_uid'] != actorUid) {
+        throw Exception(
+          '403 Forbidden: Hanya pelapor asli yang dapat mengonfirmasi penyelesaian laporan.',
+        );
+      }
+
+      final currentStatus =
+          ReportStatus.fromString((data['status'] ?? 'reported').toString());
+      if (currentStatus != ReportStatus.resolved) {
+        throw Exception(
+          '422 Transisi Ilegal: Konfirmasi hanya dapat dilakukan pada laporan berstatus resolved.',
+        );
+      }
+
+      if (data['confirmed_by_reporter'] == true) {
+        throw Exception(
+          '422 Validasi Gagal: Penyelesaian laporan sudah pernah dikonfirmasi.',
+        );
+      }
+
+      final trimmedCatatan = (catatan ?? '').trim();
+      if (!diterima && trimmedCatatan.isEmpty) {
+        throw Exception(
+          '422 Validasi Gagal: Alasan penolakan (catatan) wajib diisi saat menolak hasil perbaikan.',
+        );
+      }
+
+      final locationId = (data['location_id'] ?? '').toString();
+      final categoryId = (data['category_id'] ?? '').toString();
+      DocumentReference<Map<String, dynamic>>? lockToRestore;
+      if (!diterima && locationId.isNotEmpty && categoryId.isNotEmpty) {
+        final lockRef = _db
+            .collection('active_tickets')
+            .doc(activeTicketKey(locationId, categoryId));
+        final lockSnap = await transaction.get(lockRef);
+        if (!lockSnap.exists) {
+          lockToRestore = lockRef;
+        } else {
+          final lockReportId = lockSnap.data()?['report_id'];
+          if (lockReportId is! String || lockReportId.isEmpty) {
+            lockToRestore = lockRef;
+          } else {
+            final lockReportSnap =
+                await transaction.get(_db.collection('reports').doc(lockReportId));
+            final lockReportStatus = lockReportSnap.data()?['status'];
+            if (!lockReportSnap.exists ||
+                !_activeStatusValues.contains(lockReportStatus)) {
+              lockToRestore = lockRef;
+            }
+          }
+        }
+      }
+
+      // ---- Penulisan ----
+      final nextStatus =
+          diterima ? ReportStatus.resolved : ReportStatus.inProgress;
+      final logCatatan = trimmedCatatan.isNotEmpty
+          ? trimmedCatatan
+          : 'Perbaikan dikonfirmasi selesai oleh pelapor.';
+
+      final updates = <String, dynamic>{
+        'confirmed_by_reporter': diterima,
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+      if (!diterima) {
+        updates['status'] = ReportStatus.inProgress.value;
+      }
+
+      transaction.update(reportRef, updates);
+
+      if (lockToRestore != null) {
+        transaction.set(lockToRestore, {
+          'report_id': reportId,
+          'location_id': locationId,
+          'category_id': categoryId,
+          'created_at': FieldValue.serverTimestamp(),
+        });
+      }
+
+      final logRef = reportRef.collection('logs').doc();
+      transaction.set(logRef, {
+        'actor_uid': actorUid,
+        'actor_nama': actor.nama,
+        'actor_role': actor.role.name,
+        'status_lama': ReportStatus.resolved.value,
+        'status_baru': nextStatus.value,
+        'catatan': logCatatan,
         'created_at': FieldValue.serverTimestamp(),
       });
     });

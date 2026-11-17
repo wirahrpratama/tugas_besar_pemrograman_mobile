@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // Firestore Security Rules SiFasilitas.
-// Skema mengikuti README.md dan lib/services/report_service.dart.
+// Skema mengikuti README.md, lib/models/report_models.dart, dan lib/services/*.
 // Prinsip: tolak semuanya secara default, lalu buka hanya yang dibutuhkan.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -99,9 +99,30 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------
+    // report_photos/{photoId}
+    // Foto terkompresi (< 200 KB biner) disimpan sebagai base64.
+    // Baca: pengguna login. Buat: pengguna login atas UID sendiri dan
+    // ukuran data_base64 dibatasi (<= 275.000 karakter). Immutable.
+    // ---------------------------------------------------------------
+
+    match /report_photos/{photoId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+          && request.resource.data.owner_uid == request.auth.uid
+          && request.resource.data.mime_type is string
+          && request.resource.data.mime_type.size() > 0
+          && request.resource.data.created_at == request.time
+          && request.resource.data.data_base64 is string
+          && request.resource.data.data_base64.size() > 0
+          && request.resource.data.data_base64.size() <= 275000;
+      allow update, delete: if false;
+    }
+
+    // ---------------------------------------------------------------
     // active_tickets/{locationId}_{categoryId}
     // Dokumen kunci anti-duplikasi: menunjuk satu tiket aktif per
-    // lokasi + kategori. Dibuat bersama tiket baru, dihapus saat tiket
+    // lokasi + kategori. Dibuat bersama tiket baru (atau dipulihkan
+    // saat pelapor menolak hasil perbaikan), dihapus saat tiket
     // resolved/rejected (lihat ReportService).
     // ---------------------------------------------------------------
 
@@ -126,11 +147,24 @@ service cloud.firestore {
                 + '_' + getAfter(reportPathOf(d.report_id)).data.category_id;
       }
 
+      // Memulihkan kunci ketika pelapor asli menolak perbaikan (resolved -> in_progress).
+      function pointsToReopenedOwnReport() {
+        let d = request.resource.data;
+        return signedIn()
+            && d.report_id is string
+            && exists(reportPathOf(d.report_id))
+            && get(reportPathOf(d.report_id)).data.reporter_uid == request.auth.uid
+            && get(reportPathOf(d.report_id)).data.status == 'resolved'
+            && getAfter(reportPathOf(d.report_id)).data.status == 'in_progress'
+            && ticketKey == get(reportPathOf(d.report_id)).data.location_id
+                + '_' + get(reportPathOf(d.report_id)).data.category_id;
+      }
+
       allow read: if signedIn();
-      allow create: if pointsToNewOwnReport();
+      allow create: if pointsToNewOwnReport() || pointsToReopenedOwnReport();
 
       // Menimpa kunci basi: hanya jika tiket lama sudah hilang atau selesai.
-      allow update: if pointsToNewOwnReport()
+      allow update: if (pointsToNewOwnReport() || pointsToReopenedOwnReport())
           && (!exists(reportPathOf(resource.data.get('report_id', '_')))
               || get(reportPathOf(resource.data.get('report_id', '_'))).data.status
                  in ['resolved', 'rejected']);
@@ -169,6 +203,8 @@ service cloud.firestore {
             && d.reporter_uid == request.auth.uid
             && d.status == 'reported'
             && d.upvotes_count == 1
+            && d.supporter_uids == [request.auth.uid]
+            && d.prioritas_rank in [1, 2, 3, 4]
             && d.get('assigned_teknisi_uid', null) == null
             && d.get('assigned_teknisi_nama', null) == null
             && d.get('foto_sesudah_url', null) == null
@@ -213,23 +249,37 @@ service cloud.firestore {
             );
       }
 
-      // Auto-upvote (merge duplikat): hanya +1, hanya pada tiket aktif, dan
-      // hanya jika supporter milik pengguna dibuat dalam operasi yang sama.
+      // Auto-upvote (merge duplikat): hanya +1, hanya pada tiket aktif,
+      // menambahkan UID pemanggil ke supporter_uids, dan membuat dokumen supporter
+      // dalam operasi yang sama.
       function isUpvoteUpdate() {
+        let oldUids = resource.data.get('supporter_uids', []);
+        let newUids = request.resource.data.get('supporter_uids', []);
         return signedIn()
-            && changedKeys().hasOnly(['upvotes_count', 'updated_at'])
+            && changedKeys().hasOnly(['upvotes_count', 'supporter_uids', 'updated_at'])
             && request.resource.data.upvotes_count == resource.data.upvotes_count + 1
             && resource.data.status in ['reported', 'verified', 'assigned', 'in_progress']
             && !exists(supporterPath(request.auth.uid))
-            && existsAfter(supporterPath(request.auth.uid));
+            && existsAfter(supporterPath(request.auth.uid))
+            && !(request.auth.uid in oldUids)
+            && newUids.hasAll(oldUids)
+            && request.auth.uid in newUids
+            && newUids.size() == oldUids.size() + 1;
       }
 
-      // Pelapor asli mengonfirmasi tiket yang sudah resolved.
+      // Pelapor asli mengonfirmasi atau menolak perbaikan pada tiket resolved.
       function isReporterConfirmUpdate() {
+        let newData = request.resource.data;
         return isOwner(resource.data.reporter_uid)
-            && changedKeys().hasOnly(['confirmed_by_reporter', 'updated_at'])
             && resource.data.status == 'resolved'
-            && request.resource.data.confirmed_by_reporter == true;
+            && resource.data.get('confirmed_by_reporter', false) == false
+            && (
+              (changedKeys().hasOnly(['confirmed_by_reporter', 'updated_at'])
+                && newData.confirmed_by_reporter == true)
+              || (changedKeys().hasOnly(['status', 'confirmed_by_reporter', 'updated_at'])
+                && newData.status == 'in_progress'
+                && newData.confirmed_by_reporter == false)
+            );
       }
 
       // Log wajib atas nama pemanggil sendiri dengan role aslinya (dari
@@ -275,6 +325,29 @@ service cloud.firestore {
             );
       }
 
+      // Log konfirmasi / penolakan hasil perbaikan oleh pelapor asli
+      // (bersamaan dengan ReportService.confirmResolution).
+      function isReporterConfirmationLog() {
+        let d = request.resource.data;
+        let oldReport = get(reportPath()).data;
+        let newReport = getAfter(reportPath()).data;
+        return isOwnLog()
+            && exists(reportPath())
+            && oldReport.reporter_uid == request.auth.uid
+            && oldReport.status == 'resolved'
+            && oldReport.get('confirmed_by_reporter', false) == false
+            && d.get('status_lama', null) == 'resolved'
+            && d.get('catatan', '') is string
+            && d.catatan.size() > 0
+            && (
+              (d.status_baru == 'resolved'
+                && newReport.confirmed_by_reporter == true)
+              || (d.status_baru == 'in_progress'
+                && newReport.status == 'in_progress'
+                && newReport.confirmed_by_reporter == false)
+            );
+      }
+
       allow read: if signedIn();
       allow create: if isValidNewReport();
       allow update: if isAdminStatusUpdate()
@@ -293,10 +366,13 @@ service cloud.firestore {
       }
 
       // logs/{logId}: audit trail, hanya boleh dibuat (immutable), dan hanya
-      // oleh aktor yang berwenang (lihat isInitialLog / isStatusChangeLog).
+      // oleh aktor yang berwenang (lihat isInitialLog / isStatusChangeLog /
+      // isReporterConfirmationLog).
       match /logs/{logId} {
         allow read: if signedIn();
-        allow create: if isInitialLog() || isStatusChangeLog();
+        allow create: if isInitialLog()
+            || isStatusChangeLog()
+            || isReporterConfirmationLog();
         allow update, delete: if false;
       }
     }

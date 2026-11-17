@@ -35,14 +35,14 @@ Aplikasi menerapkan **Role-Based Access Control (RBAC)** dengan 3 peran utama:
 |---|---|---|
 | Autentikasi & RBAC | Ada | `AuthService` (daftar, masuk, lupa password, verifikasi email, ubah nama), layar `screens/auth/`, `screens/profile/`, dan `AuthGate` (navigasi berdasarkan `users/{uid}.role`). |
 | Beranda per peran | Placeholder | `PelaporHome`, `AdminDashboard`, `TeknisiDashboard` baru kerangka. Dashboard admin sudah memuat tombol **Isi Data Master**. |
-| Mesin tiket (`ReportService`) | Ada, belum dipakai UI | Buat tiket + anti-duplikasi + upvote, ubah status dengan state machine, otorisasi peran, dan audit log. |
-| Klasifikasi AI (`AiClassifierService`) | Ada, belum dipakai UI | Gemini 2.5 Flash bila `GEMINI_API_KEY` diberikan; selain itu heuristik kata kunci. |
-| Seeder master data | Ada | Aksi manual admin di dashboard admin. |
-| Aturan keamanan (`firestore.rules`) | Ada | Perlu di-deploy sendiri (lihat [Deploy Firestore Rules](#5-deploy-firestore-rules)). |
-| Pemindai QR (`mobile_scanner`) | Belum | Baru dependensi dan izin kamera (Android `CAMERA`, iOS `NSCameraUsageDescription`). |
-| Foto kerusakan (`image_picker`, `flutter_image_compress`) | Belum | Baru dependensi. **Belum ada penyimpanan berkas** (tidak ada `firebase_storage`); `foto_sebelum_url` dan `foto_sesudah_url` harus berisi URL yang sudah tersedia. |
-| Daftar/riwayat tiket, timeline log, konfirmasi pelapor | Belum | Rules mengizinkan konfirmasi pelapor (`confirmed_by_reporter`), tetapi belum ada method service maupun UI-nya. |
-| Dashboard antrean admin/teknisi | Belum | |
+| Mesin tiket (`ReportService`) & query (`ReportRepository`) | Ada, siap dipakai UI | Buat tiket + anti-duplikasi + upvote (`submitReport`), ubah status dengan state machine (`updateReportStatus`), konfirmasi penyelesaian oleh pelapor (`confirmResolution`), otorisasi peran, audit log, serta query real-time & lookup QR (`ReportRepository`). Tersedia juga lewat `Provider` di `main.dart`. |
+| Klasifikasi AI (`AiClassifierService`) | Ada, belum dipakai UI | Gemini 2.5 Flash bila `GEMINI_API_KEY` diberikan; selain itu heuristik kata kunci. Sudah didaftarkan di `MultiProvider` pada `main.dart`. |
+| Seeder master data | Ada | Aksi manual admin di dashboard admin (`SeedMasterDataButton`). |
+| Aturan keamanan & indeks (`firestore.rules`, `firestore.indexes.json`) | Ada | Perlu di-deploy sendiri (lihat [Deploy Firestore Rules & Indexes](#5-deploy-firestore-rules--indexes)). |
+| Pemindai QR (`mobile_scanner`) | Belum UI | Dependensi, izin kamera (Android `CAMERA`, iOS `NSCameraUsageDescription`), dan `ReportRepository.getLocationByQr` sudah ada; layar pemindai QR belum dibuat. |
+| Foto kerusakan (`PhotoStore`, `ReportPhoto`) | Layanan & widget ada, belum ada UI picker | `FirestorePhotoStore` mengompres gambar (`< 200 KB`, maks 1024 px) dan menyimpannya sebagai base64 di `report_photos/{photoId}` (`"photo:{photoId}"`); widget `ReportPhoto` menampilkan referensi tersebut maupun URL. Layar kamera/galeri (`image_picker`) belum dibuat. |
+| Daftar/riwayat tiket, timeline log, konfirmasi pelapor | Layanan ada, belum ada UI | Kontrak `ReportRepository` (`watchReportsForReporter`, `watchReport`, `watchLogs`), `ReportService.confirmResolution`, serta aturan `firestore.rules` sudah tersedia; layar UI belum dibuat. |
+| Dashboard antrean admin/teknisi | Layanan ada, belum ada UI | Kontrak `ReportRepository` (`watchReportsForAdmin`, `watchReportsForTeknisi`, `listTeknisi`) dan `ReportService.updateReportStatus` sudah tersedia; layar UI belum dibuat. |
 
 ---
 
@@ -59,6 +59,7 @@ stateDiagram-v2
     Verified --> Rejected: Ditolak oleh Admin
     Assigned --> InProgress: Teknisi memulai pengerjaan
     InProgress --> Resolved: Teknisi mengunggah bukti perbaikan
+    Resolved --> InProgress: Pelapor menolak hasil perbaikan
     Resolved --> [*]
     Rejected --> [*]
 ```
@@ -81,8 +82,9 @@ stateDiagram-v2
 | `in_progress` | Teknisi yang ditugaskan pada tiket | |
 | `resolved` | Teknisi yang ditugaskan pada tiket | `fotoSesudahUrl` wajib |
 | `reported` | Tidak ada | Hanya terjadi saat tiket dibuat |
+| Konfirmasi / tolak hasil (`resolved` ➔ `resolved` atau `in_progress`) | Pelapor asli tiket | Lewat `ReportService.confirmResolution`; `catatan` wajib diisi jika menolak (`diterima: false`) |
 
-Aturan ini ditegakkan dua kali: di `ReportService` (`canChangeStatus`, `isValidTransition`) dan di `firestore.rules`.
+Aturan ini ditegakkan dua kali: di `ReportService` (`canChangeStatus`, `isValidTransition`, `confirmResolution`) dan di `firestore.rules`.
 
 ---
 
@@ -155,6 +157,12 @@ Firestore Root
 │   ├── category_id: string
 │   └── created_at: Timestamp (server)
 │
+├── report_photos/ {photoId}              # foto terkompresi (< 200 KB biner), direferensikan sbg "photo:{photoId}"
+│   ├── data_base64: string               # base64 JPEG (<= 275.000 karakter)
+│   ├── mime_type: string                 # "image/jpeg"
+│   ├── owner_uid: string                 # UID pengunggah
+│   └── created_at: Timestamp (server, == request.time)
+│
 └── reports/ {reportId}
     ├── ticket_number: string (format "TKT-YYYYMMDD-XXXXXX": tanggal jam perangkat + 6 karakter pertama {reportId}, e.g. "TKT-20261117-aB3xK9")
     ├── reporter_uid: string
@@ -167,14 +175,16 @@ Firestore Root
     ├── category_id: string
     ├── nama_objek: string
     ├── prioritas: string
+    ├── prioritas_rank: number (1="darurat" | 2="tinggi" | 3="sedang" | 4="rendah", untuk sorting antrean)
     ├── target_sla_jam: number
     ├── deskripsi: string
-    ├── foto_sebelum_url: string
-    ├── foto_sesudah_url: string | null
+    ├── foto_sebelum_url: string          # "photo:{photoId}" atau URL http/https
+    ├── foto_sesudah_url: string | null   # "photo:{photoId}" atau URL http/https
     ├── status: string ("reported" | "verified" | "assigned" | "in_progress" | "resolved" | "rejected")
     ├── assigned_teknisi_uid: string | null
     ├── assigned_teknisi_nama: string | null
     ├── upvotes_count: number
+    ├── supporter_uids: string[]          # daftar UID pelapor & pendukung (untuk query riwayat & anti-duplikasi)
     ├── confirmed_by_reporter: boolean
     ├── created_at: Timestamp (server)
     ├── sla_deadline: Timestamp           # jam perangkat saat dibuat + target_sla_jam
@@ -203,19 +213,22 @@ Role pengguna selalu dibaca dari `users/{uid}.role`, bukan dari data kiriman kli
 |---|---|---|
 | `categories`, `locations` | Pengguna login | Admin |
 | `users/{uid}` | Pemilik akun, atau admin | **Buat:** pemilik, hanya `role: pelapor` dengan `sub_role` `mahasiswa`/`dosen`/`staf`. **Ubah:** pemilik (tanpa mengubah `role` dan `sub_role`), atau admin untuk akun lain. **Hapus:** tidak ada. |
-| `active_tickets` | Pengguna login | Hanya bersamaan dengan tiket yang dibuat atau diselesaikan (lewat `ReportService`) |
-| `reports` | Pengguna login | **Buat:** pelapor, kondisi awal baku. **Ubah:** admin/teknisi sesuai tabel peran, upvote +1, konfirmasi oleh pelapor asli. **Hapus:** tidak ada. |
+| `report_photos/{photoId}` | Pengguna login | **Buat:** pengguna login dengan `owner_uid == request.auth.uid`, `data_base64 <= 275.000` karakter, `created_at == request.time`. **Ubah/Hapus:** tidak ada. |
+| `active_tickets` | Pengguna login | Hanya bersamaan dengan tiket yang dibuat, dibuka ulang oleh pelapor (`confirmResolution`), atau diselesaikan/ditolak (lewat `ReportService`) |
+| `reports` | Pengguna login | **Buat:** pelapor, kondisi awal baku (`supporter_uids == [uid]`, `prioritas_rank in [1..4]`). **Ubah:** admin/teknisi sesuai tabel peran, upvote +1 (`supporter_uids`), konfirmasi/tolak hasil oleh pelapor asli. **Hapus:** tidak ada. |
 | `reports/*/supporters` | Pengguna login | Pemilik, dibuat sekali |
-| `reports/*/logs` | Pengguna login | Aktor berwenang, `created_at == request.time`, tidak bisa diubah atau dihapus |
+| `reports/*/logs` | Pengguna login | Aktor berwenang (termasuk pelapor asli untuk log awal dan konfirmasi/tolak hasil), `created_at == request.time`, tidak bisa diubah atau dihapus |
 
 ---
 
-## 🧩 Kontrak `ReportService` (untuk tim UI)
+## 🧩 Kontrak Service, Repository & PhotoStore (untuk tim UI)
 
-`ReportService()` memakai `FirebaseFirestore.instance`, jadi baru boleh dibuat setelah `Firebase.initializeApp` (sudah dilakukan di `main.dart`).
+Seluruh layanan inti sudah didaftarkan di `MultiProvider` pada `lib/main.dart` (`AuthService`, `ReportService`, `ReportRepository`, `PhotoStore`, `AiClassifierService`), sehingga UI dapat langsung mengambilnya via `context.read<...>()` setelah `Firebase.initializeApp`.
+
+### 1. Mutasi & State Machine (`ReportService`)
 
 ```dart
-final service = ReportService();
+final service = context.read<ReportService>();
 
 // Buat laporan, atau gabung ke tiket aktif yang sama (+1 upvote).
 final hasil = await service.submitReport(
@@ -223,13 +236,13 @@ final hasil = await service.submitReport(
   location: lokasi,               // CampusLocation
   category: kategori,             // FacilityCategory
   deskripsi: 'AC tidak dingin',
-  fotoSebelumUrl: 'https://...',
+  fotoSebelumUrl: photoRef,       // "photo:{photoId}" dari PhotoStore atau URL
   aiSuggestedPriority: 'tinggi',  // opsional; default = prioritas_default kategori
 );
 // hasil['merged'] (bool), hasil['ticket_number'], hasil['message'],
 // hasil['already_supported'] (hanya ada bila merged == true)
 
-// Ubah status tiket.
+// Ubah status tiket (Admin / Teknisi).
 await service.updateReportStatus(
   reportId: reportId,
   actorUid: auth.currentUser!.uid,  // hanya UID; role & nama dibaca dari users/{uid}
@@ -238,16 +251,54 @@ await service.updateReportStatus(
   assignedTeknisiUid: teknisiUid,   // wajib & hanya untuk assigned
   fotoSesudahUrl: null,             // wajib untuk resolved
 );
+
+// Konfirmasi atau tolak hasil perbaikan oleh pelapor asli pada tiket `resolved`.
+await service.confirmResolution(
+  reportId,
+  auth.currentUser!.uid,
+  diterima: true,                   // false -> status kembali ke in_progress & catatan wajib diisi
+  catatan: 'AC sudah dingin kembali',
+);
 ```
 
-| Anggota | Keterangan |
+| Anggota `ReportService` | Keterangan |
 |---|---|
-| `Future<Map<String, dynamic>> submitReport({reporter, location, category, deskripsi, fotoSebelumUrl, aiSuggestedPriority})` | Satu transaksi: cek kunci `active_tickets`, lalu merge-upvote atau buat tiket + supporter + log awal + kunci. |
+| `Future<Map<String, dynamic>> submitReport({reporter, location, category, deskripsi, fotoSebelumUrl, aiSuggestedPriority})` | Satu transaksi: cek kunci `active_tickets`, lalu merge-upvote (`supporter_uids`, `upvotes_count`) atau buat tiket (`prioritas_rank`, `supporter_uids`) + supporter + log awal + kunci. |
 | `Future<void> updateReportStatus({reportId, actorUid, newStatus, catatan, assignedTeknisiUid, fotoSesudahUrl})` | Satu transaksi: otorisasi peran, validasi transisi dan parameter, update tiket, hapus kunci (bila `resolved`/`rejected`), tulis log. |
+| `Future<void> confirmResolution(String reportId, String actorUid, {required bool diterima, String? catatan})` | Satu transaksi khusus pelapor asli pada tiket `resolved`: menerima (`confirmed_by_reporter = true`) atau menolak (`status = in_progress`, pulihkan kunci `active_tickets` bila kosong, `catatan` wajib), plus tulis log audit. |
 | `static bool isValidTransition(ReportStatus current, ReportStatus next)` | Transisi sah menurut state machine. |
-| `static bool canChangeStatus({role, actorUid, newStatus, currentAssignedUid})` | Tabel peran untuk mengubah status (untuk menampilkan/menyembunyikan tombol di UI). |
+| `static bool canChangeStatus({role, actorUid, newStatus, currentAssignedUid})` | Tabel peran untuk `updateReportStatus` (untuk menampilkan/menyembunyikan tombol di UI). |
 | `static String activeTicketKey(String locationId, String categoryId)` | ID dokumen `active_tickets`. |
 | `static String ticketNumberFor(DateTime date, String reportId)` | Nomor tiket `TKT-YYYYMMDD-XXXXXX`. |
+
+### 2. Query & Stream Data (`ReportRepository`)
+
+Semua query UI menggunakan `ReportRepository` (`lib/services/report_repository.dart`) tanpa menulis query Firestore langsung di layar. Indeks kompositnya didefinisikan di `firestore.indexes.json`.
+
+| Anggota `ReportRepository` | Keterangan |
+|---|---|
+| `Future<CampusLocation?> getLocationByQr(String kodeRuangan)` | Mencari lokasi berdasarkan isi QR Code (`locations.kode_ruangan`). |
+| `Stream<List<FacilityCategory>> watchCategories()` | Stream 6 master kategori diurutkan menurut `target_sla_jam`. |
+| `Stream<List<CampusLocation>> watchLocations()` | Stream master lokasi diurutkan menurut gedung lalu nama ruangan. |
+| `Stream<List<Report>> watchReportsForReporter(String uid)` | Stream laporan yang dibuat (`reporter_uid == uid`) atau didukung (`supporter_uids array-contains uid`), diurutkan `prioritas_rank` lalu `created_at`. |
+| `Stream<List<Report>> watchReportsForAdmin({ReportStatus? status, String? prioritas})` | Stream antrean laporan admin dengan filter opsional `status` dan `prioritas`, diurutkan `prioritas_rank` lalu `created_at`. *(Filter kategori dapat dilakukan di sisi klien pada `report.categoryId`.)* |
+| `Stream<List<Report>> watchReportsForTeknisi(String uid)` | Stream tugas laporan yang ditugaskan kepada teknisi `uid`, diurutkan `prioritas_rank` lalu `created_at`. |
+| `Stream<Report?> watchReport(String id)` | Stream detail satu laporan secara real-time (`null` bila tidak ada). |
+| `Stream<List<ReportLog>> watchLogs(String reportId)` | Stream audit trail `reports/{reportId}/logs` secara kronologis (`created_at` ASC). |
+| `Future<List<AppUser>> listTeknisi()` | Daftar akun berperan `teknisi` untuk dialog penugasan admin (aturan Firestore hanya mengizinkan `admin`). |
+
+### 3. Penyimpanan & Penampil Foto (`PhotoStore` & `ReportPhoto`)
+
+* **Unggah (`PhotoStore` / `FirestorePhotoStore`):** panggil `await context.read<PhotoStore>().uploadPhoto(file)` (atau `FirestorePhotoStore.shared.uploadPhoto(file)`). Foto otomatis dikompres bertahap (`1024px`, kualitas `60 -> 45 -> 35 -> 25`) hingga `< 200 KB`, disimpan sebagai base64 di `report_photos/{photoId}`, dan mengembalikan string referensi `"photo:{photoId}"` untuk dikirim ke `fotoSebelumUrl` / `fotoSesudahUrl`.
+* **Tampil (`ReportPhoto`):** gunakan `ReportPhoto(ref: report.fotoSebelumUrl)` (`lib/widgets/report_photo.dart`) yang mendukung baik referensi `"photo:{photoId}"` (dengan cache memori) maupun URL `http`/`https`.
+
+### 4. Panduan Singkat per Anggota UI & AI
+
+Lihat pembagian kepemilikan file lengkap dan aturan PR di [docs/PEMBAGIAN_FILE.md](docs/PEMBAGIAN_FILE.md):
+* **Aldrik (`lib/screens/report/`):** Scan QR ➔ `getLocationByQr` / pilih dari `watchLocations()` ➔ isi deskripsi ➔ `AiClassifierService.classifyComplaint` ➔ ambil foto ➔ `PhotoStore.uploadPhoto` ➔ `ReportService.submitReport`.
+* **Rafi (`lib/screens/tracking/`):** Daftar riwayat via `watchReportsForReporter(uid)` ➔ detail via `watchReport(id)` & `watchLogs(id)` ➔ foto via `ReportPhoto` ➔ konfirmasi hasil via `ReportService.confirmResolution`.
+* **Vincent (`lib/screens/home/admin_dashboard.dart`, `teknisi_dashboard.dart`):** Antrean admin via `watchReportsForAdmin`, daftar teknisi via `listTeknisi()`, tugas teknisi via `watchReportsForTeknisi(uid)`, mutasi status via `canChangeStatus` + `updateReportStatus`, foto sesudah via `PhotoStore.uploadPhoto`. *Pertahankan `SeedMasterDataButton()` di `AdminDashboard`.*
+* **Yosia (`lib/services/ai_classifier_service.dart`):** Kembangkan `AiClassifierService.classifyComplaint` (termasuk validasi output JSON Gemini terhadap 6 ID kategori & 4 level prioritas) dan unit test-nya.
 
 Catatan:
 * **Perubahan dari versi lama:** `updateReportStatus` kini menerima `actorUid` (String), bukan `actor: AppUser`, dan parameter `assignedTeknisiNama` dihapus (nama teknisi diambil dari `users/{assignedTeknisiUid}`). Kode yang masih memakai signature lama tidak akan lolos kompilasi.
@@ -264,13 +315,14 @@ Catatan:
   * `firebase_auth: ^7.0.1` - Autentikasi Pengguna
   * `cloud_firestore: ^7.1.0` - Database Real-Time NoSQL
 * **State Management:**
-  * `provider: ^6.1.5+1` - Pengelolaan State Aplikasi (saat ini menyediakan `AuthService`)
+  * `provider: ^6.1.5+1` - Pengelolaan State Aplikasi (`AuthService`, `ReportService`, `ReportRepository`, `PhotoStore`, `AiClassifierService`)
 * **Network & Intelligence:**
   * `http: ^1.6.0` - Komunikasi REST API ke Google Gemini 2.5 Flash
-* **Terpasang, belum dipakai di kode:**
+* **Kompresi Foto:**
+  * `flutter_image_compress: ^2.5.1` - Dipakai oleh `FirestorePhotoStore` sebelum menyimpan foto sebagai base64 di Firestore
+* **Terpasang, belum dipakai di layar UI:**
   * `mobile_scanner: ^7.4.2` - Pemindai Barcode/QR Code Ruangan & Aset
   * `image_picker: ^1.2.2` - Pengambilan Gambar dari Kamera & Galeri
-  * `flutter_image_compress: ^2.5.1` - Kompresi Foto sebelum Pengunggahan
   * `intl: ^0.20.3` - Format tanggal/waktu di UI
 
 ---
@@ -279,7 +331,10 @@ Catatan:
 
 ```
 .
-├── firebase.json                      # Konfigurasi Firebase CLI (rules Firestore) & FlutterFire
+├── docs/
+│   └── PEMBAGIAN_FILE.md              # Kepemilikan file & aturan Git/PR per anggota
+├── firebase.json                      # Konfigurasi Firebase CLI (rules & indexes Firestore) & FlutterFire
+├── firestore.indexes.json             # Indeks komposit Cloud Firestore untuk query ReportRepository
 ├── firestore.rules                    # Aturan keamanan Cloud Firestore
 ├── pubspec.yaml
 ├── android/ ios/ linux/ macos/ web/   # Proyek platform (android/app/google-services.json sudah ter-commit)
@@ -287,7 +342,7 @@ Catatan:
 │   ├── firebase_options.dart          # Konfigurasi platform Firebase (FlutterFire CLI)
 │   ├── main.dart                      # Entry point: init Firebase, MultiProvider, AuthGate
 │   ├── models/
-│   │   └── report_models.dart         # AppUser, CampusLocation, FacilityCategory, enum UserRole & ReportStatus
+│   │   └── report_models.dart         # AppUser, CampusLocation, FacilityCategory, Report, ReportLog, Supporter, enum
 │   ├── screens/
 │   │   ├── auth_gate.dart             # Navigasi berbasis peran (login / verifikasi email / beranda per role)
 │   │   ├── auth/                      # login, register, lupa password, verifikasi email
@@ -298,14 +353,18 @@ Catatan:
 │   │   ├── ai_classifier_service.dart # Klasifikasi AI (Gemini 2.5 Flash) + heuristik lokal
 │   │   ├── auth_service.dart          # Firebase Auth + profil users/{uid}
 │   │   ├── firebase_seeder.dart       # Seeder master data (6 kategori & 10 lokasi), dipicu manual admin
-│   │   └── report_service.dart        # State machine, anti-duplikasi, transaksi laporan, audit log
+│   │   ├── photo_store.dart           # Kompresi & penyimpanan foto terkompresi di report_photos/{photoId}
+│   │   ├── report_repository.dart     # Query real-time & lookup Firestore untuk seluruh modul UI
+│   │   └── report_service.dart        # State machine, anti-duplikasi, konfirmasi pelapor, audit log
 │   ├── utils/
 │   │   └── validators.dart            # Validator form (email kampus, NIM/NIP, password)
 │   └── widgets/
 │       ├── loading_button.dart
+│       ├── report_photo.dart          # Penampil foto laporan ("photo:{photoId}" atau URL http/https)
 │       └── seed_master_data_button.dart  # Tombol "Isi Data Master" di dashboard admin
 └── test/
     ├── firebase_seeder_test.dart
+    ├── report_models_test.dart
     ├── report_service_test.dart
     ├── seed_master_data_button_test.dart
     ├── validators_test.dart
@@ -345,19 +404,19 @@ Pendaftaran di aplikasi hanya menghasilkan akun **pelapor** dengan email kampus 
 ### 4. Pengisian Data Awal (Master Data Seeder)
 Master data (6 kategori fasilitas dan 10 lokasi/QR code ruangan) diisi **manual, sekali jalan, oleh admin**. Seeder tidak dipanggil otomatis dari `main()`, karena `firestore.rules` hanya mengizinkan admin menulis koleksi `categories` dan `locations`.
 
-1. Deploy rules ([langkah 5](#5-deploy-firestore-rules)).
+1. Deploy rules & indeks ([langkah 5](#5-deploy-firestore-rules--indexes)).
 2. Siapkan akun admin ([langkah 3](#3-membuat-akun-admin--teknisi)).
 3. Masuk sebagai admin, buka **Dashboard Admin**, tekan **Isi Data Master** lalu konfirmasi.
 
 `FirebaseSeeder.seedMasterDataIfNeeded()` memeriksa `categories` dan `locations` secara terpisah: koleksi yang sudah berisi dilewati, sehingga aman dijalankan ulang.
 
-### 5. Deploy Firestore Rules
-Repo belum memiliki `.firebaserc`, jadi proyek harus disebut eksplisit:
+### 5. Deploy Firestore Rules & Indexes
+Repo belum memiliki `.firebaserc`, jadi proyek harus disebut eksplisit. Perintah berikut men-deploy `firestore.rules` sekaligus `firestore.indexes.json`:
 ```bash
 firebase login
-firebase deploy --only firestore:rules --project sifasilitas-kampus
+firebase deploy --only firestore --project sifasilitas-kampus
 ```
-Untuk hanya memeriksa sintaks tanpa merilis apa pun, tambahkan `--dry-run`. Rules harus di-deploy ulang setiap kali `firestore.rules` berubah; aplikasi tidak akan bisa menulis `categories`, `locations`, atau log tiket dengan benar sebelum rules terbaru aktif.
+Untuk hanya memeriksa sintaks tanpa merilis apa pun, tambahkan `--dry-run`. Rules dan indeks harus di-deploy ulang setiap kali `firestore.rules` atau `firestore.indexes.json` berubah; aplikasi tidak akan bisa menulis `categories`, `locations`, `report_photos`, log tiket, atau menjalankan query `ReportRepository` sebelum konfigurasi terbaru aktif.
 
 ### 6. Menjalankan Aplikasi
 ```bash
