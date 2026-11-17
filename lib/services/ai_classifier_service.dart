@@ -14,16 +14,20 @@ class DamageClassificationResult {
 }
 
 class AiClassifierService {
+  /// Kunci dibaca saat build dari --dart-define=GEMINI_API_KEY=... (tidak di-hardcode).
+  static const String _envApiKey = String.fromEnvironment('GEMINI_API_KEY');
+
   final String? geminiApiKey;
 
-  const AiClassifierService({this.geminiApiKey});
+  const AiClassifierService({String? geminiApiKey})
+      : geminiApiKey = geminiApiKey ?? _envApiKey;
 
   /// Mengklasifikasikan deskripsi keluhan ke 6 objek kerusakan & tingkat prioritas tiket
   Future<DamageClassificationResult> classifyComplaint(String deskripsi) async {
     if (geminiApiKey != null && geminiApiKey!.isNotEmpty) {
       try {
         final uri = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiApiKey',
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
         );
         final prompt = 'Kamu adalah sistem pengklasifikasi tiket pengaduan fasilitas kampus. '
             'Berdasarkan keluhan berikut: "$deskripsi", kembalikan JSON murni dengan key: '
@@ -33,7 +37,10 @@ class AiClassifierService {
 
         final response = await http.post(
           uri,
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': geminiApiKey!,
+          },
           body: jsonEncode({
             'contents': [
               {
@@ -46,7 +53,7 @@ class AiClassifierService {
               'responseMimeType': 'application/json',
             },
           }),
-        );
+        ).timeout(const Duration(seconds: 8));
 
         if (response.statusCode == 200) {
           final body = jsonDecode(response.body);

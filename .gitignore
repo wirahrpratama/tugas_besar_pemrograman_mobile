@@ -46,3 +46,11 @@ migrate_working_dir/
 **/ios/**/*.perspectivev3
 **/ios/**/DerivedData/
 **/ios/**/Pods/
+
+# Secrets & kredensial (jangan pernah di-commit)
+.env
+key.properties
+*.jks
+*.keystore
+GoogleService-Info.plist
+service-account*.json

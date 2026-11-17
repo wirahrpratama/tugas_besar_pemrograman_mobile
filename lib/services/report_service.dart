@@ -4,6 +4,18 @@ import '../models/report_models.dart';
 class ReportService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  /// Nilai status (string Firestore) yang dianggap tiket masih aktif.
+  static const List<String> _activeStatusValues = [
+    'reported',
+    'verified',
+    'assigned',
+    'in_progress',
+  ];
+
+  /// ID dokumen kunci anti-duplikasi: active_tickets/{locationId}_{categoryId}.
+  static String activeTicketKey(String locationId, String categoryId) =>
+      '${locationId}_$categoryId';
+
   /// Validasi State Machine sesuai Slide Opsi 5:
   /// reported -> verified -> assigned -> in_progress -> resolved
   static bool isValidTransition(ReportStatus current, ReportStatus next) {
@@ -26,7 +38,38 @@ class ReportService {
     }
   }
 
-  /// Buat Laporan Baru (dengan Pengecekan Anti-Duplikasi + Auto-Upvote)
+  /// Tabel peran perubahan status:
+  /// - verified / rejected / assigned : hanya admin
+  /// - in_progress / resolved         : hanya teknisi yang ditugaskan di tiket
+  /// - reported                       : tidak bisa di-set siapa pun
+  /// [currentAssignedUid] adalah assigned_teknisi_uid pada tiket saat ini.
+  static bool canChangeStatus({
+    required UserRole role,
+    required String actorUid,
+    required ReportStatus newStatus,
+    required String? currentAssignedUid,
+  }) {
+    switch (newStatus) {
+      case ReportStatus.verified:
+      case ReportStatus.rejected:
+      case ReportStatus.assigned:
+        return role == UserRole.admin;
+      case ReportStatus.inProgress:
+      case ReportStatus.resolved:
+        return role == UserRole.teknisi &&
+            currentAssignedUid != null &&
+            currentAssignedUid.isNotEmpty &&
+            currentAssignedUid == actorUid;
+      case ReportStatus.reported:
+        return false;
+    }
+  }
+
+  /// Buat Laporan Baru (dengan Pengecekan Anti-Duplikasi + Auto-Upvote).
+  ///
+  /// Pengecekan duplikat dan pembuatan tiket terjadi dalam SATU transaksi
+  /// lewat dokumen kunci `active_tickets/{locationId}_{categoryId}`, sehingga
+  /// dua pelapor bersamaan tidak bisa membuat dua tiket aktif yang sama.
   Future<Map<String, dynamic>> submitReport({
     required AppUser reporter,
     required CampusLocation location,
@@ -35,44 +78,65 @@ class ReportService {
     required String fotoSebelumUrl,
     String? aiSuggestedPriority,
   }) async {
-    final existingQuery = await _db
-        .collection('reports')
-        .where('location_id', isEqualTo: location.id)
-        .where('category_id', isEqualTo: category.id)
-        .where('status', whereIn: [
-          'reported',
-          'verified',
-          'assigned',
-          'in_progress',
-        ])
-        .limit(1)
-        .get();
+    final now = DateTime.now();
+    final slaDeadline = now.add(Duration(hours: category.targetSlaJam));
+    final ticketNumber =
+        'TKT-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.millisecondsSinceEpoch.toString().substring(8)}';
 
-    if (existingQuery.docs.isNotEmpty) {
-      final existingDoc = existingQuery.docs.first;
-      final supporterRef = existingDoc.reference
-          .collection('supporters')
-          .doc(reporter.uid);
+    final lockRef = _db
+        .collection('active_tickets')
+        .doc(activeTicketKey(location.id, category.id));
+    final reportRef = _db.collection('reports').doc();
+    final logRef = reportRef.collection('logs').doc();
+    final supporterRef = reportRef.collection('supporters').doc(reporter.uid);
 
-      return _db.runTransaction((transaction) async {
-        final supporterSnap = await transaction.get(supporterRef);
-        if (supporterSnap.exists) {
+    return _db.runTransaction<Map<String, dynamic>>((transaction) async {
+      // ---- Semua pembacaan dilakukan lebih dulu (syarat transaksi Firestore) ----
+      final lockSnap = await transaction.get(lockRef);
+
+      DocumentReference<Map<String, dynamic>>? existingRef;
+      Map<String, dynamic>? existingData;
+      bool alreadySupported = false;
+
+      if (lockSnap.exists) {
+        final existingId = lockSnap.data()?['report_id'];
+        if (existingId is String && existingId.isNotEmpty) {
+          final candidateRef = _db.collection('reports').doc(existingId);
+          final candidateSnap = await transaction.get(candidateRef);
+          final candidateData = candidateSnap.data();
+          // Kunci basi (laporan hilang / sudah resolved / rejected) diabaikan,
+          // lalu ditimpa oleh tiket baru di bawah.
+          if (candidateSnap.exists &&
+              candidateData != null &&
+              _activeStatusValues.contains(candidateData['status'])) {
+            existingRef = candidateRef;
+            existingData = candidateData;
+            final existingSupporterSnap = await transaction
+                .get(candidateRef.collection('supporters').doc(reporter.uid));
+            alreadySupported = existingSupporterSnap.exists;
+          }
+        }
+      }
+
+      // ---- Cabang merge: tiket aktif sudah ada ----
+      if (existingRef != null && existingData != null) {
+        if (alreadySupported) {
           return {
             'merged': true,
             'already_supported': true,
-            'ticket_number': existingDoc.data()['ticket_number'],
+            'ticket_number': existingData['ticket_number'],
             'message':
                 'Fasilitas ini sudah dilaporkan dan sedang ditangani. Anda sudah tercatat sebagai pendukung tiket ini.',
           };
         }
 
-        transaction.set(supporterRef, {
+        transaction.set(existingRef.collection('supporters').doc(reporter.uid), {
           'user_uid': reporter.uid,
           'nama': reporter.nama,
           'created_at': FieldValue.serverTimestamp(),
         });
 
-        transaction.update(existingDoc.reference, {
+        transaction.update(existingRef, {
           'upvotes_count': FieldValue.increment(1),
           'updated_at': FieldValue.serverTimestamp(),
         });
@@ -80,23 +144,13 @@ class ReportService {
         return {
           'merged': true,
           'already_supported': false,
-          'ticket_number': existingDoc.data()['ticket_number'],
+          'ticket_number': existingData['ticket_number'],
           'message':
               'Keluhan serupa di ruangan ini sudah aktif. Dukungan Anda (+1 Upvote) berhasil ditambahkan agar prioritas naik!',
         };
-      });
-    }
+      }
 
-    final now = DateTime.now();
-    final slaDeadline = now.add(Duration(hours: category.targetSlaJam));
-    final ticketNumber =
-        'TKT-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.millisecondsSinceEpoch.toString().substring(8)}';
-
-    final reportRef = _db.collection('reports').doc();
-    final logRef = reportRef.collection('logs').doc();
-    final supporterRef = reportRef.collection('supporters').doc(reporter.uid);
-
-    await _db.runTransaction((transaction) async {
+      // ---- Cabang tiket baru: buat laporan + kunci secara atomik ----
       transaction.set(reportRef, {
         'ticket_number': ticketNumber,
         'reporter_uid': reporter.uid,
@@ -138,39 +192,75 @@ class ReportService {
         'catatan': 'Laporan awal dibuat melalui aplikasi.',
         'created_at': Timestamp.fromDate(now),
       });
-    });
 
-    return {
-      'merged': false,
-      'ticket_number': ticketNumber,
-      'message': 'Tiket laporan baru berhasil dibuat dengan nomor $ticketNumber.',
-    };
+      transaction.set(lockRef, {
+        'report_id': reportRef.id,
+        'location_id': location.id,
+        'category_id': category.id,
+        'created_at': Timestamp.fromDate(now),
+      });
+
+      return {
+        'merged': false,
+        'ticket_number': ticketNumber,
+        'message': 'Tiket laporan baru berhasil dibuat dengan nomor $ticketNumber.',
+      };
+    });
   }
 
-  /// Update Status Laporan dengan State Machine Guard + Atomic Audit Trail
+  /// Update Status Laporan dengan State Machine Guard + Atomic Audit Trail.
+  ///
+  /// Identitas dan role aktor dibaca dari `users/{actorUid}` di dalam transaksi
+  /// (bukan dari objek kiriman UI). Saat tiket menjadi resolved/rejected,
+  /// dokumen kunci `active_tickets` dihapus dalam transaksi yang sama.
   Future<void> updateReportStatus({
     required String reportId,
-    required AppUser actor,
+    required String actorUid,
     required ReportStatus newStatus,
     required String catatan,
     String? assignedTeknisiUid,
-    String? assignedTeknisiNama,
     String? fotoSesudahUrl,
   }) async {
-    if (actor.role == UserRole.pelapor) {
-      throw Exception('403 Forbidden: Pelapor tidak diizinkan mengubah status pekerjaan.');
-    }
-
     final reportRef = _db.collection('reports').doc(reportId);
+    final actorRef = _db.collection('users').doc(actorUid);
+    final hasTeknisiUid =
+        assignedTeknisiUid != null && assignedTeknisiUid.isNotEmpty;
+    final teknisiRef =
+        hasTeknisiUid ? _db.collection('users').doc(assignedTeknisiUid) : null;
 
     await _db.runTransaction((transaction) async {
+      // ---- Semua pembacaan dilakukan lebih dulu ----
+      final actorSnap = await transaction.get(actorRef);
       final snap = await transaction.get(reportRef);
-      if (!snap.exists) {
+      final teknisiSnap = (newStatus == ReportStatus.assigned && teknisiRef != null)
+          ? await transaction.get(teknisiRef)
+          : null;
+
+      final actorData = actorSnap.data();
+      if (!actorSnap.exists || actorData == null) {
+        throw Exception('403 Forbidden: Akun pengguna tidak ditemukan.');
+      }
+      final actor = AppUser.fromMap(actorUid, actorData);
+
+      final data = snap.data();
+      if (!snap.exists || data == null) {
         throw Exception('Laporan tidak ditemukan.');
       }
 
-      final data = snap.data()!;
       final currentStatus = ReportStatus.fromString((data['status'] ?? 'reported').toString());
+
+      // ---- Otorisasi berdasarkan tabel peran ----
+      final currentAssignedUid = data['assigned_teknisi_uid'] as String?;
+      if (!canChangeStatus(
+        role: actor.role,
+        actorUid: actorUid,
+        newStatus: newStatus,
+        currentAssignedUid: currentAssignedUid,
+      )) {
+        throw Exception(
+          '403 Forbidden: Peran ${actor.role.name} tidak diizinkan mengubah status ke ${newStatus.value} pada tiket ini.',
+        );
+      }
 
       if (!isValidTransition(currentStatus, newStatus)) {
         throw Exception(
@@ -178,9 +268,29 @@ class ReportService {
         );
       }
 
-      if (newStatus == ReportStatus.assigned &&
-          (assignedTeknisiUid == null || assignedTeknisiUid.isEmpty)) {
-        throw Exception('422 Validasi Gagal: Wajib memilih Teknisi saat mengubah status ke Assigned.');
+      // ---- Validasi parameter ----
+      if (newStatus == ReportStatus.rejected && catatan.trim().isEmpty) {
+        throw Exception('422 Validasi Gagal: Alasan penolakan (catatan) wajib diisi.');
+      }
+
+      if (newStatus != ReportStatus.assigned && assignedTeknisiUid != null) {
+        throw Exception('422 Validasi Gagal: Teknisi hanya dapat dipilih saat status diubah ke Assigned.');
+      }
+
+      String? teknisiNama;
+      if (newStatus == ReportStatus.assigned) {
+        if (!hasTeknisiUid) {
+          throw Exception('422 Validasi Gagal: Wajib memilih Teknisi saat mengubah status ke Assigned.');
+        }
+        final teknisiData = teknisiSnap?.data();
+        if (teknisiSnap == null || !teknisiSnap.exists || teknisiData == null) {
+          throw Exception('422 Validasi Gagal: Teknisi yang dipilih tidak ditemukan.');
+        }
+        final teknisi = AppUser.fromMap(assignedTeknisiUid, teknisiData);
+        if (teknisi.role != UserRole.teknisi) {
+          throw Exception('422 Validasi Gagal: Pengguna yang dipilih bukan berperan Teknisi.');
+        }
+        teknisiNama = teknisi.nama;
       }
 
       if (newStatus == ReportStatus.resolved &&
@@ -188,14 +298,31 @@ class ReportService {
         throw Exception('422 Validasi Gagal: Teknisi wajib mengunggah Foto Sesudah perbaikan sebelum menutup tiket ke Resolved.');
       }
 
+      // Dokumen kunci dibaca (bila perlu) sebelum penulisan apa pun.
+      DocumentReference<Map<String, dynamic>>? lockToDelete;
+      if (newStatus == ReportStatus.resolved || newStatus == ReportStatus.rejected) {
+        final lockRef = _db.collection('active_tickets').doc(
+              activeTicketKey(
+                (data['location_id'] ?? '').toString(),
+                (data['category_id'] ?? '').toString(),
+              ),
+            );
+        final lockSnap = await transaction.get(lockRef);
+        // Hanya hapus kunci milik tiket ini; kunci yang menunjuk tiket lain dibiarkan.
+        if (lockSnap.exists && lockSnap.data()?['report_id'] == reportId) {
+          lockToDelete = lockRef;
+        }
+      }
+
+      // ---- Penulisan ----
       final updates = <String, dynamic>{
         'status': newStatus.value,
         'updated_at': FieldValue.serverTimestamp(),
       };
 
-      if (assignedTeknisiUid != null) {
+      if (newStatus == ReportStatus.assigned) {
         updates['assigned_teknisi_uid'] = assignedTeknisiUid;
-        updates['assigned_teknisi_nama'] = assignedTeknisiNama;
+        updates['assigned_teknisi_nama'] = teknisiNama;
       }
 
       if (fotoSesudahUrl != null) {
@@ -204,9 +331,13 @@ class ReportService {
 
       transaction.update(reportRef, updates);
 
+      if (lockToDelete != null) {
+        transaction.delete(lockToDelete);
+      }
+
       final logRef = reportRef.collection('logs').doc();
       transaction.set(logRef, {
-        'actor_uid': actor.uid,
+        'actor_uid': actorUid,
         'actor_nama': actor.nama,
         'actor_role': actor.role.name,
         'status_lama': currentStatus.value,
