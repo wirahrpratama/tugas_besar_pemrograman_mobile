@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:sifasilitas/models/report_models.dart';
 import 'package:sifasilitas/screens/home/pelapor_home.dart';
 import 'package:sifasilitas/screens/report/report_submitted_screen.dart';
+
+import 'fake_scanner_platform.dart';
 
 const _user = AppUser(
   uid: 'u1',
@@ -14,6 +17,9 @@ const _user = AppUser(
 );
 
 void main() {
+  // ScanQrScreen memakai kamera; di test diganti platform palsu.
+  setUp(() => MobileScannerPlatform.instance = FakeScannerPlatform());
+
   testWidgets('tombol Pindai QR ruangan membuka layar pemindai', (
     tester,
   ) async {
