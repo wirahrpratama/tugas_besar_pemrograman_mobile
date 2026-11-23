@@ -2,14 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/report_models.dart';
+import '../../services/report_repository.dart';
 import 'create_report_screen.dart';
 
 /// Layar pindai QR ruangan.
 ///
-/// Langkah 2: kamera, bingkai bidik, senter, penanganan izin kamera, dan
-/// pencegahan deteksi ganda. Pencocokan QR ke `locations` menyusul (langkah 3).
+/// Kamera + bingkai bidik + senter + penanganan izin kamera. Isi QR dicocokkan
+/// ke master `locations` lewat [ReportRepository.getLocationByQr]; bila cocok,
+/// panel ruangan tampil dengan tombol "Lanjut buat laporan".
 class ScanQrScreen extends StatefulWidget {
   const ScanQrScreen({super.key, required this.user});
 
@@ -21,27 +24,27 @@ class ScanQrScreen extends StatefulWidget {
 
 class _ScanQrScreenState extends State<ScanQrScreen>
     with WidgetsBindingObserver {
-  // TODO(langkah 3): hapus data contoh ini; lokasi asli dari getLocationByQr.
-  static const _contohLokasi = CampusLocation(
-    id: 'contoh',
-    kodeRuangan: 'QR-GDA-201',
-    namaGedung: 'Gedung A',
-    namaRuangan: 'Ruang 201 (contoh)',
-    lantai: 2,
-  );
+  /// Lama QR yang ditolak diabaikan, supaya QR asing yang masih di depan
+  /// kamera tidak memicu SnackBar dan query Firestore berulang-ulang.
+  static const _rejectCooldown = Duration(seconds: 3);
 
   // Controller memegang sesi kamera native, jadi dibuat sekali di initState
   // dan wajib dibebaskan di dispose (sama seperti TextEditingController).
   late final MobileScannerController _controller;
 
   /// Kunci agar satu QR tidak diproses berkali-kali: `onDetect` bisa
-  /// terpanggil beruntun selama QR yang sama masih di depan kamera.
-  /// Di langkah 3 kunci ini juga menahan deteksi selama `await getLocationByQr`.
+  /// terpanggil beruntun selama QR yang sama masih di depan kamera, dan
+  /// kunci ini menahan deteksi baru selama `await getLocationByQr` berjalan.
   bool _isProcessing = false;
 
-  /// Isi QR terakhir yang terbaca. Selama tidak null, deteksi baru diabaikan
-  /// sampai pengguna menekan "Pindai lagi".
-  String? _scannedValue;
+  /// Ruangan hasil pencocokan QR. Selama tidak null, panel ruangan tampil dan
+  /// deteksi baru diabaikan sampai pengguna menekan "Pindai lagi".
+  CampusLocation? _foundLocation;
+
+  /// Isi QR yang baru saja ditolak (tidak dikenal atau gagal diperiksa).
+  /// Diabaikan selama [_rejectCooldown], lalu dihapus oleh [_rejectTimer].
+  String? _rejectedValue;
+  Timer? _rejectTimer;
 
   /// True saat layar lain (form laporan) sedang di atas layar ini, supaya
   /// kamera tidak dinyalakan lagi ketika app kembali dari background.
@@ -86,6 +89,7 @@ class _ScanQrScreenState extends State<ScanQrScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _rejectTimer?.cancel();
     unawaited(_controller.dispose());
     super.dispose();
   }
@@ -99,22 +103,56 @@ class _ScanQrScreenState extends State<ScanQrScreen>
     }
   }
 
-  void _onDetect(BarcodeCapture capture) {
-    if (_isProcessing || _scannedValue != null) return;
+  Future<void> _onDetect(BarcodeCapture capture) async {
+    if (_isProcessing || _foundLocation != null) return;
 
     final raw = capture.barcodes
         .map((b) => b.rawValue?.trim() ?? '')
         .firstWhere((v) => v.isNotEmpty, orElse: () => '');
-    if (raw.isEmpty) return;
+    if (raw.isEmpty || raw == _rejectedValue) return;
 
-    _isProcessing = true;
-    // TODO(langkah 3): ganti dengan getLocationByQr(raw) + panel ruangan.
-    setState(() => _scannedValue = raw);
-    _isProcessing = false;
+    // Ambil service SEBELUM await: setelah await, context belum tentu masih
+    // terpasang (lint use_build_context_synchronously).
+    final repo = context.read<ReportRepository>();
+    setState(() => _isProcessing = true);
+
+    CampusLocation? location;
+    String? errorMessage;
+    try {
+      location = await repo.getLocationByQr(raw);
+      if (location == null) {
+        errorMessage = 'QR tidak dikenali sebagai ruangan kampus.';
+      }
+    } on Exception {
+      // Jaringan putus, izin Firestore ditolak, dsb. Jangan tampilkan detail
+      // teknis ke pengguna.
+      errorMessage =
+          'Gagal memeriksa QR. Periksa koneksi internet lalu coba lagi.';
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _isProcessing = false;
+      _foundLocation = location;
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    // SnackBar penolakan sebelumnya ditutup agar tidak menutupi tombol panel.
+    messenger.hideCurrentSnackBar();
+    if (errorMessage != null) {
+      _rejectTemporarily(raw);
+      messenger.showSnackBar(SnackBar(content: Text(errorMessage)));
+    }
+  }
+
+  void _rejectTemporarily(String value) {
+    _rejectTimer?.cancel();
+    _rejectedValue = value;
+    // Tidak perlu setState: nilai ini tidak ditampilkan, hanya dipakai filter.
+    _rejectTimer = Timer(_rejectCooldown, () => _rejectedValue = null);
   }
 
   void _scanAgain() {
-    setState(() => _scannedValue = null);
+    setState(() => _foundLocation = null);
   }
 
   Future<void> _bukaFormLaporan(CampusLocation location) async {
@@ -131,7 +169,10 @@ class _ScanQrScreenState extends State<ScanQrScreen>
     );
     if (!mounted) return;
 
+    // Kembali dari form (mis. tombol "Ubah" lokasi) berarti pengguna ingin
+    // memilih ruangan lain, jadi panel lama ditutup dan pemindaian dimulai lagi.
     _isCoveredByOtherRoute = false;
+    setState(() => _foundLocation = null);
     await _startCamera();
   }
 
@@ -150,9 +191,14 @@ class _ScanQrScreenState extends State<ScanQrScreen>
             top: false,
             child: Padding(
               padding: const EdgeInsets.all(24),
-              child: _scannedValue == null
-                  ? _buildHint()
-                  : _buildScannedPanel(_scannedValue!),
+              child: switch (_foundLocation) {
+                final location? => _LocationPanel(
+                  location: location,
+                  onContinue: () => _bukaFormLaporan(location),
+                  onScanAgain: _scanAgain,
+                ),
+                null => _buildHint(),
+              },
             ),
           ),
         ],
@@ -175,7 +221,7 @@ class _ScanQrScreenState extends State<ScanQrScreen>
         return MobileScanner(
           controller: _controller,
           scanWindow: scanWindow,
-          onDetect: _onDetect,
+          onDetect: (capture) => unawaited(_onDetect(capture)),
           placeholderBuilder: (context) => ColoredBox(
             color: colorScheme.surfaceContainerHighest,
             child: const Center(child: CircularProgressIndicator()),
@@ -239,38 +285,75 @@ class _ScanQrScreenState extends State<ScanQrScreen>
   }
 
   Widget _buildHint() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Arahkan kamera ke QR Code di pintu ruangan atau stiker aset.',
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
-        // TODO(langkah 3): hapus tombol sementara ini.
-        FilledButton(
-          onPressed: () => _bukaFormLaporan(_contohLokasi),
-          child: const Text('Lanjut (contoh, sementara)'),
-        ),
-      ],
+    if (_isProcessing) {
+      return const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox.square(
+            dimension: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 12),
+          Text('Memeriksa QR…'),
+        ],
+      );
+    }
+    return const Text(
+      'Arahkan kamera ke QR Code di pintu ruangan atau stiker aset.',
+      textAlign: TextAlign.center,
     );
   }
+}
 
-  // TODO(langkah 3): ganti isi panel dengan data ruangan hasil getLocationByQr.
-  Widget _buildScannedPanel(String value) {
+/// Panel bawah setelah QR cocok dengan ruangan kampus.
+class _LocationPanel extends StatelessWidget {
+  const _LocationPanel({
+    required this.location,
+    required this.onContinue,
+    required this.onScanAgain,
+  });
+
+  final CampusLocation location;
+  final VoidCallback onContinue;
+  final VoidCallback onScanAgain;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Row(
+          children: [
+            Icon(Icons.meeting_room_outlined, color: colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(location.namaRuangan, style: textTheme.titleMedium),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         Text(
-          'QR terbaca: $value',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium,
+          '${location.kodeRuangan} · ${location.namaGedung} · '
+          'Lantai ${location.lantai}',
+          style: textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 16),
+        FilledButton(
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+          onPressed: onContinue,
+          child: const Text('Lanjut buat laporan'),
+        ),
+        const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: _scanAgain,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+          ),
+          onPressed: onScanAgain,
           icon: const Icon(Icons.qr_code_scanner),
           label: const Text('Pindai lagi'),
         ),
