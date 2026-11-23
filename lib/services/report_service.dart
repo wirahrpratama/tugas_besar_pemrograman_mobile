@@ -149,6 +149,7 @@ class ReportService {
           return {
             'merged': true,
             'already_supported': true,
+            'report_id': existingRef.id,
             'ticket_number': existingData['ticket_number'],
             'message':
                 'Fasilitas ini sudah dilaporkan dan sedang ditangani. Anda sudah tercatat sebagai pendukung tiket ini.',
@@ -170,6 +171,7 @@ class ReportService {
         return {
           'merged': true,
           'already_supported': false,
+          'report_id': existingRef.id,
           'ticket_number': existingData['ticket_number'],
           'message':
               'Keluhan serupa di ruangan ini sudah aktif. Dukungan Anda (+1 Upvote) berhasil ditambahkan agar prioritas naik!',
@@ -230,6 +232,7 @@ class ReportService {
 
       return {
         'merged': false,
+        'report_id': reportRef.id,
         'ticket_number': ticketNumber,
         'message': 'Tiket laporan baru berhasil dibuat dengan nomor $ticketNumber.',
       };
