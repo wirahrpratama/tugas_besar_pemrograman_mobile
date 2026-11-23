@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'app_button.dart';
+
+/// [AppButton] varian primary dengan state loading.
+///
+/// Dipertahankan untuk kompatibilitas; untuk varian lain gunakan [AppButton]
+/// secara langsung.
 class LoadingButton extends StatelessWidget {
   const LoadingButton({
     super.key,
@@ -14,15 +20,10 @@ class LoadingButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
-      onPressed: loading ? null : onPressed,
-      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-      child: loading
-          ? const SizedBox.square(
-              dimension: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Text(label),
+    return AppButton(
+      label: label,
+      loading: loading,
+      onPressed: onPressed,
     );
   }
 }

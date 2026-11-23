@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
+import '../../theme/app_icon_size.dart';
+import '../../theme/app_spacing.dart';
+import '../../widgets/app_button.dart';
 import '../../widgets/loading_button.dart';
+import 'auth_scaffold.dart';
 
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({super.key, required this.email});
@@ -97,69 +101,56 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final canResend = !_sending && _cooldownLeft <= 0;
-    return Scaffold(
+    return AuthScaffold(
       appBar: AppBar(title: const Text('Verifikasi Email')),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Icon(
-                    Icons.mark_email_unread_outlined,
-                    size: 72,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Kami telah mengirim tautan verifikasi ke',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                  Text(
-                    widget.email,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Buka tautan tersebut, lalu kembali ke aplikasi. '
-                    'Cek folder spam jika email tidak ada di kotak masuk.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 32),
-                  LoadingButton(
-                    label: 'Saya Sudah Verifikasi',
-                    loading: _checking,
-                    onPressed: () => _checkVerified(showFeedback: true),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: canResend ? _resend : null,
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                    child: Text(
-                      _cooldownLeft > 0
-                          ? 'Kirim Ulang ($_cooldownLeft detik)'
-                          : 'Kirim Ulang Email',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () => context.read<AuthService>().signOut(),
-                    child: const Text('Keluar / Ganti Akun'),
-                  ),
-                ],
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Icon(
+            Icons.mark_email_unread_outlined,
+            size: AppIconSize.large,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            'Kami telah mengirim tautan verifikasi ke',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyLarge,
+          ),
+          Text(
+            widget.email,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
             ),
           ),
-        ),
+          const SizedBox(height: AppSpacing.sm),
+          const Text(
+            'Buka tautan tersebut, lalu kembali ke aplikasi. '
+            'Cek folder spam jika email tidak ada di kotak masuk.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.xxl),
+          LoadingButton(
+            label: 'Saya Sudah Verifikasi',
+            loading: _checking,
+            onPressed: () => _checkVerified(showFeedback: true),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            label: _cooldownLeft > 0
+                ? 'Kirim Ulang ($_cooldownLeft detik)'
+                : 'Kirim Ulang Email',
+            variant: AppButtonVariant.outline,
+            onPressed: canResend ? _resend : null,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            label: 'Keluar / Ganti Akun',
+            variant: AppButtonVariant.text,
+            onPressed: () => context.read<AuthService>().signOut(),
+          ),
+        ],
       ),
     );
   }

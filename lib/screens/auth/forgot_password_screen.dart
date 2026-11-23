@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
+import '../../theme/app_spacing.dart';
 import '../../utils/validators.dart';
 import '../../widgets/loading_button.dart';
+import 'auth_scaffold.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key, this.initialEmail = ''});
@@ -53,45 +55,35 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AuthScaffold(
       appBar: AppBar(title: const Text('Lupa Password')),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Masukkan email akun Anda. Kami akan mengirim tautan untuk membuat password baru.',
-                    ),
-                    const SizedBox(height: 24),
-                    TextFormField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined),
-                      ),
-                      validator: Validators.email,
-                    ),
-                    const SizedBox(height: 24),
-                    LoadingButton(
-                      label: 'Kirim Tautan Reset',
-                      loading: _loading,
-                      onPressed: _submit,
-                    ),
-                  ],
-                ),
-              ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Masukkan email akun Anda. Kami akan mengirim tautan untuk membuat password baru.',
             ),
-          ),
+            const SizedBox(height: AppSpacing.xl),
+            TextFormField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _submit(),
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.email_outlined),
+              ),
+              validator: Validators.email,
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            LoadingButton(
+              label: 'Kirim Tautan Reset',
+              loading: _loading,
+              onPressed: _submit,
+            ),
+          ],
         ),
       ),
     );

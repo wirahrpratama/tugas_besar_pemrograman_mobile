@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
-import 'screens/auth_gate.dart';
+import 'screens/splash/splash_screen.dart';
 import 'services/ai_classifier_service.dart';
 import 'services/auth_service.dart';
 import 'services/photo_store.dart';
 import 'services/report_repository.dart';
 import 'services/report_service.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,13 +35,8 @@ class SiFasilitasApp extends StatelessWidget {
       child: MaterialApp(
         title: 'SiFasilitas',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF108A43)),
-          inputDecorationTheme: const InputDecorationTheme(
-            border: OutlineInputBorder(),
-          ),
-        ),
-        home: const AuthGate(),
+        theme: AppTheme.light,
+        home: const SplashScreen(),
       ),
     );
   }

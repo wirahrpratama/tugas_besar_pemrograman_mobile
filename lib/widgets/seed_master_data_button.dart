@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/material.dart';
 
 import '../services/firebase_seeder.dart';
+import '../theme/app_spacing.dart';
 
 typedef SeedAction = Future<SeedResult> Function();
 
@@ -113,7 +114,7 @@ class _SeedMasterDataButtonState extends State<SeedMasterDataButton> {
               : const Icon(Icons.dataset_outlined),
           label: const Text('Isi Data Master'),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         Text(
           'Aksi sekali jalan untuk mengisi kategori dan lokasi awal.',
           style: Theme.of(context).textTheme.bodySmall,
