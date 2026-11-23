@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/photo_store.dart';
+import '../theme/app_colors.dart';
 
 /// Menampilkan foto laporan dari referensi `"photo:{photoId}"` (via [PhotoStore])
 /// atau URL gambar biasa (`http`/`https`).
@@ -99,9 +100,9 @@ class _ReportPhotoState extends State<ReportPhoto> {
         Container(
           width: widget.width,
           height: widget.height,
-          color: Colors.grey.shade200,
+          color: AppColors.surfaceVariant,
           alignment: Alignment.center,
-          child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+          child: const Icon(Icons.broken_image_outlined, color: AppColors.muted),
         );
   }
 

@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBU03TqR9nfX-K_m-4gHVsdUKeKQ1gKNAM',
+    apiKey: 'AIzaSyDp02EQrNBhbuzaEONUVSSkON4mwDitEl8',
     appId: '1:239673598270:android:2591a725326ee2d22a8c6f',
     messagingSenderId: '239673598270',
     projectId: 'sifasilitas-kampus',

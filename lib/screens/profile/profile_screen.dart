@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/report_models.dart';
 import '../../services/auth_service.dart';
+import '../../theme/app_spacing.dart';
 import '../../utils/validators.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -58,7 +59,7 @@ class ProfileScreen extends StatelessWidget {
               ? Validators.identityLabel(user.subRole)
               : 'NIP / ID Pegawai';
           return ListView(
-            padding: const EdgeInsets.symmetric(vertical: 24),
+            padding: AppSpacing.paddingVerticalXl,
             children: [
               Center(
                 child: CircleAvatar(
@@ -69,7 +70,7 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               ListTile(
                 leading: const Icon(Icons.person_outline),
                 title: const Text('Nama'),
@@ -101,15 +102,14 @@ class ProfileScreen extends StatelessWidget {
                       : _roleLabels[user.role]!,
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: AppSpacing.paddingHorizontalLg,
                 child: OutlinedButton.icon(
                   onPressed: () => _logout(context),
                   icon: const Icon(Icons.logout),
                   label: const Text('Keluar'),
                   style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
                     foregroundColor: theme.colorScheme.error,
                   ),
                 ),
