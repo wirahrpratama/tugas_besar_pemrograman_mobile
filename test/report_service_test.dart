@@ -335,6 +335,47 @@ void main() {
       expect(mergeUpdate.data.containsKey('upvotes_count'), isTrue);
     });
 
+    test('submitReport mengembalikan report_id di ketiga cabang (baru, gabung, sudah mendukung)', () async {
+      final baru = await service.submitReport(
+        reporter: pelapor,
+        location: lokasi,
+        category: kategori,
+        deskripsi: 'AC mati',
+        fotoSebelumUrl: 'photo:p1',
+      );
+      final reportPath = db.store.ops
+          .firstWhere((o) =>
+              o.path.startsWith('reports/') &&
+              !o.path.contains('/logs/') &&
+              !o.path.contains('/supporters/'))
+          .path;
+      final reportId = reportPath.split('/')[1];
+      expect(baru['merged'], isFalse);
+      expect(baru['report_id'], reportId);
+
+      final gabung = await service.submitReport(
+        reporter: pendukung,
+        location: lokasi,
+        category: kategori,
+        deskripsi: 'AC juga mati',
+        fotoSebelumUrl: 'photo:p2',
+      );
+      expect(gabung['merged'], isTrue);
+      expect(gabung['already_supported'], isFalse);
+      expect(gabung['report_id'], reportId);
+
+      final ulang = await service.submitReport(
+        reporter: pendukung,
+        location: lokasi,
+        category: kategori,
+        deskripsi: 'Masih mati',
+        fotoSebelumUrl: 'photo:p3',
+      );
+      expect(ulang['merged'], isTrue);
+      expect(ulang['already_supported'], isTrue);
+      expect(ulang['report_id'], reportId);
+    });
+
     test('updateReportStatus menolak teknisi mengembalikan resolved -> in_progress', () async {
       db.store.docs['reports/rep1'] = {
         'reporter_uid': 'u_pelapor',
