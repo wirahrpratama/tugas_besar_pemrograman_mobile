@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../models/report_models.dart';
 import '../services/auth_service.dart';
+import '../theme/app_spacing.dart';
+import '../widgets/app_button.dart';
 import 'auth/login_screen.dart';
 import 'auth/verify_email_screen.dart';
 import 'home/admin_dashboard.dart';
@@ -86,17 +88,18 @@ class _ProfileProblemScreen extends StatelessWidget {
       body: SafeArea(
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: AppSpacing.paddingAllXl,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.error_outline, size: 64),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
                 Text(message, textAlign: TextAlign.center),
-                const SizedBox(height: 24),
-                OutlinedButton(
+                const SizedBox(height: AppSpacing.xl),
+                AppButton(
+                  label: 'Keluar',
+                  variant: AppButtonVariant.outline,
                   onPressed: () => context.read<AuthService>().signOut(),
-                  child: const Text('Keluar'),
                 ),
               ],
             ),

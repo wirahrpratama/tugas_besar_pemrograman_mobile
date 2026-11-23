@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/report_models.dart';
+import '../../theme/app_spacing.dart';
 import '../profile/profile_screen.dart';
 
 /// Kerangka sementara beranda tiap peran sampai modul M2–M4 mengisinya.
@@ -40,14 +41,14 @@ class RoleHomeScaffold extends StatelessWidget {
       ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: AppSpacing.paddingAllXl,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 64, color: theme.colorScheme.primary),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.lg),
               Text('Halo, ${user.nama}', style: theme.textTheme.titleLarge),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               Text(placeholderText, textAlign: TextAlign.center),
               ...extraContent,
             ],
