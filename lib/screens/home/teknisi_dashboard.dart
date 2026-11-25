@@ -26,72 +26,15 @@ class TeknisiDashboard extends StatelessWidget {
     } on ProviderNotFoundException {
       return _TechnicianScaffold(
         user: user,
-        body: const Center(
-          child: Padding(
-            padding: AppSpacing.paddingAllXl,
-            child: Text(
-              'Daftar tugas perbaikan akan ditampilkan di sini.',
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
+        body: const _TechnicianUnavailable(),
       );
     }
 
     return _TechnicianScaffold(
       user: user,
-      body: StreamBuilder<List<Report>>(
-        stream: repository.watchReportsForTeknisi(user.uid),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(
-              child: Padding(
-                padding: AppSpacing.paddingAllXl,
-                child: Text(
-                  'Gagal memuat daftar tugas.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final reports = snapshot.data!;
-          if (reports.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: AppSpacing.paddingAllXl,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.assignment_turned_in_outlined,
-                      size: 48,
-                      color: AppColors.muted,
-                    ),
-                    SizedBox(height: AppSpacing.sm),
-                    Text(
-                      'Belum ada tugas yang ditugaskan.',
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-          return ListView.separated(
-            padding:
-                AppSpacing.paddingHorizontalLg +
-                const EdgeInsets.only(top: AppSpacing.sm),
-            itemCount: reports.length,
-            separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
-            itemBuilder: (_, index) => _TechnicianReportCard(
-              report: reports[index],
-              actorUid: user.uid,
-            ),
-          );
-        },
+      body: _TechnicianTaskList(
+        user: user,
+        reports: repository.watchReportsForTeknisi(user.uid),
       ),
     );
   }
@@ -106,8 +49,10 @@ class _TechnicianScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.surfaceVariant,
       appBar: AppBar(
         title: const Text('Tugas Teknisi'),
+        backgroundColor: AppColors.surface,
         actions: [
           IconButton(
             tooltip: 'Profil',
@@ -119,6 +64,387 @@ class _TechnicianScaffold extends StatelessWidget {
         ],
       ),
       body: body,
+    );
+  }
+}
+
+class _TechnicianTaskList extends StatefulWidget {
+  const _TechnicianTaskList({required this.user, required this.reports});
+
+  final AppUser user;
+  final Stream<List<Report>> reports;
+
+  @override
+  State<_TechnicianTaskList> createState() => _TechnicianTaskListState();
+}
+
+class _TechnicianTaskListState extends State<_TechnicianTaskList> {
+  ReportStatus? _statusFilter;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Report>>(
+      stream: widget.reports,
+      builder: (context, snapshot) {
+        final reports = snapshot.data ?? const <Report>[];
+        final assignedCount = reports
+            .where((report) => report.status == ReportStatus.assigned)
+            .length;
+        final inProgressCount = reports
+            .where((report) => report.status == ReportStatus.inProgress)
+            .length;
+        final visibleReports = _statusFilter == null
+            ? reports
+            : reports
+                  .where((report) => report.status == _statusFilter)
+                  .toList();
+
+        return SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  0,
+                ),
+                child: Column(
+                  children: [
+                    _TechnicianWelcomeCard(user: widget.user),
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _TechnicianSummaryCard(
+                            icon: Icons.assignment_outlined,
+                            label: 'Ditugaskan',
+                            count: assignedCount,
+                            color: AppColors.warning,
+                            background: AppColors.warningContainer,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _TechnicianSummaryCard(
+                            icon: Icons.handyman_outlined,
+                            label: 'Dikerjakan',
+                            count: inProgressCount,
+                            color: AppColors.info,
+                            background: AppColors.infoContainer,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Daftar tugas',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        if (snapshot.hasData)
+                          Text(
+                            '${visibleReports.length} tiket',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppColors.muted),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _StatusFilterChip(
+                            label: 'Semua',
+                            selected: _statusFilter == null,
+                            onSelected: () =>
+                                setState(() => _statusFilter = null),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          _StatusFilterChip(
+                            label: 'Ditugaskan',
+                            selected: _statusFilter == ReportStatus.assigned,
+                            onSelected: () => setState(
+                              () => _statusFilter = ReportStatus.assigned,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          _StatusFilterChip(
+                            label: 'Dikerjakan',
+                            selected: _statusFilter == ReportStatus.inProgress,
+                            onSelected: () => setState(
+                              () => _statusFilter = ReportStatus.inProgress,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: snapshot.hasError
+                    ? const _TechnicianEmptyState(
+                        icon: Icons.cloud_off_outlined,
+                        title: 'Tugas gagal dimuat',
+                        message:
+                            'Periksa koneksi internet lalu coba lagi nanti.',
+                      )
+                    : !snapshot.hasData
+                    ? const Center(child: CircularProgressIndicator())
+                    : visibleReports.isEmpty
+                    ? _TechnicianEmptyState(
+                        icon: Icons.inbox_outlined,
+                        title: _statusFilter == null
+                            ? 'Belum ada tugas'
+                            : 'Tidak ada tugas pada status ini',
+                        message: _statusFilter == null
+                            ? 'Tugas baru akan muncul di sini setelah admin menugaskan tiket kepada Anda.'
+                            : 'Tiket dengan status ini akan muncul di sini.',
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.xs,
+                          AppSpacing.lg,
+                          AppSpacing.xl,
+                        ),
+                        itemCount: visibleReports.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: AppSpacing.sm),
+                        itemBuilder: (_, index) => _TechnicianReportCard(
+                          report: visibleReports[index],
+                          actorUid: widget.user.uid,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TechnicianWelcomeCard extends StatelessWidget {
+  const _TechnicianWelcomeCard({required this.user});
+
+  final AppUser user;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final name = user.nama.trim().isEmpty ? 'Teknisi' : user.nama.trim();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Halo, $name',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Siap membantu fasilitas kampus tetap nyaman.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          const CircleAvatar(
+            radius: 25,
+            backgroundColor: Colors.white,
+            foregroundColor: AppColors.primary,
+            child: Icon(Icons.engineering_outlined, size: 28),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TechnicianSummaryCard extends StatelessWidget {
+  const _TechnicianSummaryCard({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.background,
+  });
+
+  final IconData icon;
+  final String label;
+  final int count;
+  final Color color;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 19,
+            backgroundColor: background,
+            foregroundColor: color,
+            child: Icon(icon, size: 20),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: AppColors.muted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusFilterChip extends StatelessWidget {
+  const _StatusFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      showCheckmark: false,
+      selectedColor: AppColors.primaryContainer,
+      labelStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: selected ? AppColors.primary : AppColors.muted,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+      ),
+      side: BorderSide(
+        color: selected
+            ? AppColors.primary.withValues(alpha: 0.35)
+            : Colors.grey.shade300,
+      ),
+    );
+  }
+}
+
+class _TechnicianEmptyState extends StatelessWidget {
+  const _TechnicianEmptyState({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: AppSpacing.paddingAllXl,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 36, color: AppColors.primary),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TechnicianUnavailable extends StatelessWidget {
+  const _TechnicianUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _TechnicianEmptyState(
+      icon: Icons.assignment_outlined,
+      title: 'Tugas belum tersedia',
+      message: 'Daftar tugas perbaikan akan ditampilkan di sini.',
     );
   }
 }
