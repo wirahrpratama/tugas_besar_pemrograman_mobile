@@ -34,8 +34,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
 
     return Scaffold(
+      backgroundColor: AppColors.surfaceVariant,
       appBar: AppBar(
         title: const Text('Dashboard Admin'),
+        backgroundColor: AppColors.surface,
         actions: [
           IconButton(
             tooltip: 'Profil',
@@ -55,9 +57,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return _EmptyMessage(
-              icon: Icons.error_outline,
-              message: 'Gagal memuat antrean tiket.',
+            return const _EmptyMessage(
+              icon: Icons.cloud_off_outlined,
+              title: 'Antrean gagal dimuat',
+              message: 'Periksa koneksi internet lalu coba lagi nanti.',
             );
           }
           if (!snapshot.hasData) {
@@ -73,37 +76,116 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     report.namaObjek == _categoryId,
               )
               .toList();
+          final urgentCount = reports
+              .where((report) => report.prioritas.toLowerCase() == 'darurat')
+              .length;
 
           return Column(
             children: [
-              _AdminFilters(
-                status: _status,
-                priority: _priority,
-                categoryId: _categoryId,
-                reports: allReports,
-                onStatusChanged: (value) => setState(() => _status = value),
-                onPriorityChanged: (value) => setState(() => _priority = value),
-                onCategoryChanged: (value) =>
-                    setState(() => _categoryId = value),
-              ),
               Expanded(
-                child: reports.isEmpty
-                    ? const _EmptyMessage(
-                        icon: Icons.inbox_outlined,
-                        message: 'Tidak ada tiket pada filter ini.',
-                      )
-                    : ListView.separated(
-                        padding:
-                            AppSpacing.paddingHorizontalLg +
-                            const EdgeInsets.only(top: AppSpacing.sm),
-                        itemCount: reports.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: AppSpacing.sm),
-                        itemBuilder: (_, index) => _AdminReportCard(
-                          report: reports[index],
-                          actorUid: widget.user.uid,
-                        ),
+                child: ListView(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                        AppSpacing.md,
                       ),
+                      child: Column(
+                        children: [
+                          _AdminWelcomeCard(user: widget.user),
+                          const SizedBox(height: AppSpacing.md),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _AdminMetricCard(
+                                  icon: Icons.confirmation_number_outlined,
+                                  label: 'Tiket tampil',
+                                  count: reports.length,
+                                  color: AppColors.primary,
+                                  background: AppColors.primaryContainer,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: _AdminMetricCard(
+                                  icon: Icons.priority_high_rounded,
+                                  label: 'Darurat',
+                                  count: urgentCount,
+                                  color: AppColors.danger,
+                                  background: AppColors.dangerContainer,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    _AdminFilters(
+                      status: _status,
+                      priority: _priority,
+                      categoryId: _categoryId,
+                      reports: allReports,
+                      onClear: () => setState(() {
+                        _status = null;
+                        _priority = null;
+                        _categoryId = null;
+                      }),
+                      onStatusChanged: (value) =>
+                          setState(() => _status = value),
+                      onPriorityChanged: (value) =>
+                          setState(() => _priority = value),
+                      onCategoryChanged: (value) =>
+                          setState(() => _categoryId = value),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.md,
+                        AppSpacing.lg,
+                        AppSpacing.sm,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Antrean tiket',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          Text(
+                            '${reports.length} tiket',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (reports.isEmpty)
+                      const _EmptyMessage(
+                        icon: Icons.inbox_outlined,
+                        title: 'Tidak ada tiket pada filter ini',
+                        message:
+                            'Tiket yang sesuai akan muncul di sini saat laporan baru masuk.',
+                      )
+                    else
+                      for (final report in reports)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.lg,
+                            0,
+                            AppSpacing.lg,
+                            AppSpacing.sm,
+                          ),
+                          child: _AdminReportCard(
+                            report: report,
+                            actorUid: widget.user.uid,
+                          ),
+                        ),
+                  ],
+                ),
               ),
               const Padding(
                 padding: EdgeInsets.fromLTRB(
@@ -123,19 +205,151 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _buildWithoutData(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Dashboard Admin')),
-      body: const SafeArea(
+      backgroundColor: AppColors.surfaceVariant,
+      appBar: AppBar(
+        title: const Text('Dashboard Admin'),
+        backgroundColor: AppColors.surface,
+      ),
+      body: SafeArea(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _EmptyMessage(
-              icon: Icons.admin_panel_settings_outlined,
-              message: 'Antrean tiket akan ditampilkan di sini.',
+            Padding(
+              padding: AppSpacing.paddingAllLg,
+              child: _AdminWelcomeCard(user: widget.user),
             ),
-            SizedBox(height: AppSpacing.sm),
-            SeedMasterDataButton(),
+            const Expanded(
+              child: _EmptyMessage(
+                icon: Icons.admin_panel_settings_outlined,
+                title: 'Antrean tiket belum tersedia',
+                message: 'Hubungkan data untuk melihat laporan fasilitas.',
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.lg,
+                AppSpacing.xl,
+              ),
+              child: SeedMasterDataButton(),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AdminWelcomeCard extends StatelessWidget {
+  const _AdminWelcomeCard({required this.user});
+
+  final AppUser user;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final name = user.nama.trim().isEmpty ? 'Admin' : user.nama.trim();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Halo, $name',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Kelola laporan dan bantu percepat penanganan fasilitas.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          const CircleAvatar(
+            radius: 25,
+            backgroundColor: Colors.white,
+            foregroundColor: AppColors.primary,
+            child: Icon(Icons.admin_panel_settings_outlined, size: 28),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminMetricCard extends StatelessWidget {
+  const _AdminMetricCard({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.background,
+  });
+
+  final IconData icon;
+  final String label;
+  final int count;
+  final Color color;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 19,
+            backgroundColor: background,
+            foregroundColor: color,
+            child: Icon(icon, size: 20),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: AppColors.muted),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -147,6 +361,7 @@ class _AdminFilters extends StatelessWidget {
     required this.priority,
     required this.categoryId,
     required this.reports,
+    required this.onClear,
     required this.onStatusChanged,
     required this.onPriorityChanged,
     required this.onCategoryChanged,
@@ -156,6 +371,7 @@ class _AdminFilters extends StatelessWidget {
   final String? priority;
   final String? categoryId;
   final List<Report> reports;
+  final VoidCallback onClear;
   final ValueChanged<ReportStatus?> onStatusChanged;
   final ValueChanged<String?> onPriorityChanged;
   final ValueChanged<String?> onCategoryChanged;
@@ -166,59 +382,90 @@ class _AdminFilters extends StatelessWidget {
     for (final report in reports) {
       categories.putIfAbsent(report.categoryId, () => report.namaObjek);
     }
+    final hasFilters = status != null || priority != null || categoryId != null;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.sm,
-        AppSpacing.lg,
-        AppSpacing.sm,
+      margin: AppSpacing.paddingHorizontalLg,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Wrap(
-        spacing: AppSpacing.sm,
-        runSpacing: AppSpacing.sm,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _FilterDropdown<ReportStatus?>(
-            label: 'Status',
-            value: status,
-            items: [
-              const DropdownMenuItem(value: null, child: Text('Semua status')),
-              ...ReportStatus.values.map(
-                (value) =>
-                    DropdownMenuItem(value: value, child: Text(value.label)),
+          Row(
+            children: [
+              const Icon(
+                Icons.tune_rounded,
+                size: 18,
+                color: AppColors.primary,
               ),
-            ],
-            onChanged: onStatusChanged,
-          ),
-          _FilterDropdown<String?>(
-            label: 'Urgensi',
-            value: priority,
-            items: const [
-              DropdownMenuItem(value: null, child: Text('Semua urgensi')),
-              DropdownMenuItem(value: 'darurat', child: Text('Darurat')),
-              DropdownMenuItem(value: 'tinggi', child: Text('Tinggi')),
-              DropdownMenuItem(value: 'sedang', child: Text('Sedang')),
-              DropdownMenuItem(value: 'rendah', child: Text('Rendah')),
-            ],
-            onChanged: onPriorityChanged,
-          ),
-          _FilterDropdown<String?>(
-            label: 'Kategori',
-            value: categoryId,
-            items: [
-              const DropdownMenuItem(
-                value: null,
-                child: Text('Semua kategori'),
-              ),
-              ...categories.entries.map(
-                (entry) => DropdownMenuItem(
-                  value: entry.key,
-                  child: Text(entry.value),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Filter antrean',
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
+              if (hasFilters)
+                TextButton(onPressed: onClear, child: const Text('Atur ulang')),
             ],
-            onChanged: onCategoryChanged,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              _FilterDropdown<ReportStatus?>(
+                label: 'Status',
+                value: status,
+                items: [
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('Semua status'),
+                  ),
+                  ...ReportStatus.values.map(
+                    (value) => DropdownMenuItem(
+                      value: value,
+                      child: Text(value.label),
+                    ),
+                  ),
+                ],
+                onChanged: onStatusChanged,
+              ),
+              _FilterDropdown<String?>(
+                label: 'Urgensi',
+                value: priority,
+                items: const [
+                  DropdownMenuItem(value: null, child: Text('Semua urgensi')),
+                  DropdownMenuItem(value: 'darurat', child: Text('Darurat')),
+                  DropdownMenuItem(value: 'tinggi', child: Text('Tinggi')),
+                  DropdownMenuItem(value: 'sedang', child: Text('Sedang')),
+                  DropdownMenuItem(value: 'rendah', child: Text('Rendah')),
+                ],
+                onChanged: onPriorityChanged,
+              ),
+              _FilterDropdown<String?>(
+                label: 'Kategori',
+                value: categoryId,
+                items: [
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('Semua kategori'),
+                  ),
+                  ...categories.entries.map(
+                    (entry) => DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                  ),
+                ],
+                onChanged: onCategoryChanged,
+              ),
+            ],
           ),
         ],
       ),
@@ -536,9 +783,14 @@ class _PriorityIcon extends StatelessWidget {
 }
 
 class _EmptyMessage extends StatelessWidget {
-  const _EmptyMessage({required this.icon, required this.message});
+  const _EmptyMessage({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
 
   final IconData icon;
+  final String title;
   final String message;
 
   @override
@@ -546,13 +798,42 @@ class _EmptyMessage extends StatelessWidget {
     return Center(
       child: Padding(
         padding: AppSpacing.paddingAllXl,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 48, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: AppSpacing.sm),
-            Text(message, textAlign: TextAlign.center),
-          ],
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 36, color: AppColors.primary),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
+              ),
+            ],
+          ),
         ),
       ),
     );

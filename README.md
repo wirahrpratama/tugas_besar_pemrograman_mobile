@@ -34,7 +34,7 @@ Aplikasi menerapkan **Role-Based Access Control (RBAC)** dengan 3 peran utama:
 | Komponen | Status | Keterangan |
 |---|---|---|
 | Autentikasi & RBAC | Ada | `AuthService` (daftar, masuk, lupa password, verifikasi email, ubah nama), layar `screens/auth/`, `screens/profile/`, dan `AuthGate` (navigasi berdasarkan `users/{uid}.role`). |
-| Beranda per peran | Placeholder | `PelaporHome`, `AdminDashboard`, `TeknisiDashboard` baru kerangka. Dashboard admin sudah memuat tombol **Isi Data Master**. |
+| Beranda per peran | Sebagian | Dashboard admin menampilkan antrean, filter, verifikasi, dan penugasan teknisi. Dashboard teknisi menampilkan tugas yang ditugaskan, progres pengerjaan, serta penyelesaian tiket dengan foto. Beranda pelapor tersedia; beberapa alur lanjutan masih belum dibuat. |
 | Mesin tiket (`ReportService`) & query (`ReportRepository`) | Ada, siap dipakai UI | Buat tiket + anti-duplikasi + upvote (`submitReport`), ubah status dengan state machine (`updateReportStatus`), konfirmasi penyelesaian oleh pelapor (`confirmResolution`), otorisasi peran, audit log, serta query real-time & lookup QR (`ReportRepository`). Tersedia juga lewat `Provider` di `main.dart`. |
 | Klasifikasi AI (`AiClassifierService`) | Ada, belum dipakai UI | Gemini 2.5 Flash bila `GEMINI_API_KEY` diberikan; selain itu heuristik kata kunci. Sudah didaftarkan di `MultiProvider` pada `main.dart`. |
 | Seeder master data | Ada | Aksi manual admin di dashboard admin (`SeedMasterDataButton`). |
@@ -42,7 +42,7 @@ Aplikasi menerapkan **Role-Based Access Control (RBAC)** dengan 3 peran utama:
 | Pemindai QR (`mobile_scanner`) | Belum UI | Dependensi, izin kamera (Android `CAMERA`, iOS `NSCameraUsageDescription`), dan `ReportRepository.getLocationByQr` sudah ada; layar pemindai QR belum dibuat. |
 | Foto kerusakan (`PhotoStore`, `ReportPhoto`) | Layanan & widget ada, belum ada UI picker | `FirestorePhotoStore` mengompres gambar (`< 200 KB`, maks 1024 px) dan menyimpannya sebagai base64 di `report_photos/{photoId}` (`"photo:{photoId}"`); widget `ReportPhoto` menampilkan referensi tersebut maupun URL. Layar kamera/galeri (`image_picker`) belum dibuat. |
 | Daftar/riwayat tiket, timeline log, konfirmasi pelapor | Layanan ada, belum ada UI | Kontrak `ReportRepository` (`watchReportsForReporter`, `watchReport`, `watchLogs`), `ReportService.confirmResolution`, serta aturan `firestore.rules` sudah tersedia; layar UI belum dibuat. |
-| Dashboard antrean admin/teknisi | Layanan ada, belum ada UI | Kontrak `ReportRepository` (`watchReportsForAdmin`, `watchReportsForTeknisi`, `listTeknisi`) dan `ReportService.updateReportStatus` sudah tersedia; layar UI belum dibuat. |
+| Dashboard antrean admin/teknisi | Sebagian | `AdminDashboard` menyediakan antrean dengan filter status, urgensi, kategori serta aksi verifikasi/penugasan. `TeknisiDashboard` menyediakan daftar tugas, filter status, aksi mulai pengerjaan, dan penyelesaian dengan foto. |
 
 ---
 
