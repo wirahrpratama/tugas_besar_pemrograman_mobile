@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 
 import '../../models/report_models.dart';
 import '../../services/report_repository.dart';
+import '../../theme/app_spacing.dart';
+import '../../widgets/app_top_bar.dart';
 import 'create_report_screen.dart';
 
 /// Layar pindai QR ruangan.
@@ -179,14 +181,29 @@ class _ScanQrScreenState extends State<ScanQrScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pindai QR ruangan'),
-        actions: [_TorchButton(controller: _controller)],
+      appBar: AppTopBar(
+        title: 'Pindai QR ruangan',
+        profileUid: widget.user.uid,
+        userName: widget.user.nama,
+        photoUrl: widget.user.photoUrl,
+        extraActions: [_TorchButton(controller: _controller)],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: _buildScanner()),
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _buildScanner(),
+                const Positioned(
+                  top: AppSpacing.sm,
+                  left: AppSpacing.md,
+                  child: AppBackButton(),
+                ),
+              ],
+            ),
+          ),
           SafeArea(
             top: false,
             child: Padding(

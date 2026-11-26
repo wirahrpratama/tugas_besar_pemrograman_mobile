@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_colors.dart';
 import '../../theme/app_icon_size.dart';
 import '../../theme/app_spacing.dart';
 
-/// Kerangka layout konsisten untuk seluruh halaman autentikasi.
-///
-/// Menyediakan SafeArea, scroll, padding [AppSpacing.paddingAllXl], dan
-/// lebar maksimum 420 agar form auth seragam di semua layar.
+/// Kerangka layout konsisten dan bersih untuk seluruh halaman autentikasi.
 class AuthScaffold extends StatelessWidget {
   const AuthScaffold({super.key, this.appBar, required this.child});
 
@@ -16,6 +14,7 @@ class AuthScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.surfaceVariant,
       appBar: appBar,
       body: SafeArea(
         child: Center(
@@ -55,14 +54,19 @@ class AuthHeader extends StatelessWidget {
         Text(
           title,
           textAlign: TextAlign.center,
-          style: theme.textTheme.headlineMedium,
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: AppColors.ink,
+          ),
         ),
         if (subtitle != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
             subtitle!,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppColors.muted,
+            ),
           ),
         ],
       ],

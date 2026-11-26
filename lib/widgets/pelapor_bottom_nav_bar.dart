@@ -142,7 +142,7 @@ class _PelaporNavItemState extends State<_PelaporNavItem> {
     // Warna kapsul latar belakang (pill)
     Color pillColor = Colors.transparent;
     if (isSelected) {
-      pillColor = AppColors.primaryContainer; // soft emerald highlight (#D9F2E3)
+      pillColor = AppColors.highlight;
     } else if (isHovered) {
       pillColor = AppColors.primary.withValues(alpha: 0.08); // hover glow
     }
@@ -212,7 +212,7 @@ class _PelaporNavItemState extends State<_PelaporNavItem> {
               AnimatedContainer(
                 duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOutCubic,
-                width: isSelected ? 14 : 0,
+                width: isSelected ? 16 : 0,
                 height: 3,
                 decoration: BoxDecoration(
                   color: isSelected ? activeColor : Colors.transparent,

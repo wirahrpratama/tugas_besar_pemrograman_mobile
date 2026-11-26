@@ -5,12 +5,13 @@ import '../../models/report_models.dart';
 import '../../services/report_repository.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/app_top_bar.dart';
 import '../../widgets/pelapor_bottom_nav_bar.dart';
 import '../profile/profile_screen.dart';
 import '../report/scan_qr_screen.dart';
 
 /// Halaman utama peran Pelapor dengan navigasi bawah (bottom navbar) interaktif
-/// dan tampilan beranda yang modern, informatif, serta dilengkapi ikon penunjang yang profesional.
+/// dan beranda yang ringkas, informatif, serta selaras dengan desain sistem.
 class PelaporHome extends StatefulWidget {
   const PelaporHome({
     super.key,
@@ -34,16 +35,6 @@ class _PelaporHomeState extends State<PelaporHome> {
     _currentTab = widget.initialTab;
   }
 
-  static String _capitalize(String s) =>
-      s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
-
-  static String _getInitials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts[0].isEmpty) return '?';
-    if (parts.length == 1) return parts[0][0].toUpperCase();
-    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-  }
-
   Stream<List<Report>> _watchUserReports(BuildContext context, String uid) {
     try {
       final repo = context.read<ReportRepository?>();
@@ -57,7 +48,6 @@ class _PelaporHomeState extends State<PelaporHome> {
   void _onTabTapped(int index) {
     final selectedTab = PelaporTab.values[index];
     if (selectedTab == PelaporTab.pindai) {
-      // Membuka pemindai kamera QR ruangan
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ScanQrScreen(user: widget.user),
@@ -72,23 +62,14 @@ class _PelaporHomeState extends State<PelaporHome> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.surfaceVariant,
-      appBar: AppBar(
-        title: Text(_currentTab == PelaporTab.beranda
+      appBar: AppTopBar(
+        title: _currentTab == PelaporTab.beranda
             ? 'Beranda Pelapor'
-            : _currentTab.label),
-        backgroundColor: AppColors.surface,
-        actions: [
-          if (_currentTab != PelaporTab.profil)
-            IconButton(
-              tooltip: 'Profil Akun',
-              icon: const Icon(Icons.account_circle_outlined),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => ProfileScreen(uid: widget.user.uid),
-                ),
-              ),
-            ),
-        ],
+            : _currentTab.label,
+        profileUid: widget.user.uid,
+        userName: widget.user.nama,
+        photoUrl: widget.user.photoUrl,
+        isProfileActive: _currentTab == PelaporTab.profil,
       ),
       body: _buildBody(),
       bottomNavigationBar: PelaporBottomNavBar(
@@ -109,23 +90,29 @@ class _PelaporHomeState extends State<PelaporHome> {
       case PelaporTab.profil:
         return ProfileScreen(
           uid: widget.user.uid,
+          userName: widget.user.nama,
           showAppBar: false,
         );
     }
   }
 
   Widget _buildBeranda() {
-    final theme = Theme.of(context);
     final user = widget.user;
 
     return StreamBuilder<List<Report>>(
       stream: _watchUserReports(context, user.uid),
       builder: (context, snapshot) {
+        final isLoading =
+            snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData;
         final reports = snapshot.data ?? const <Report>[];
         final activeReports = reports.where((r) {
           return r.status != ReportStatus.resolved &&
               r.status != ReportStatus.rejected;
         }).toList();
+        final resolvedCount = reports
+            .where((r) => r.status == ReportStatus.resolved)
+            .length;
 
         return ListView(
           padding: const EdgeInsets.symmetric(
@@ -133,104 +120,13 @@ class _PelaporHomeState extends State<PelaporHome> {
             vertical: AppSpacing.lg,
           ),
           children: [
-            // 1. Header Salam & Identitas Sivitas
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  // Avatar inisial dengan sentuhan primer
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryContainer,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.3),
-                        width: 1.5,
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      _getInitials(user.nama),
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Halo, ${user.nama}',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.verified_outlined,
-                              size: 14,
-                              color: AppColors.primary,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                'SiFasilitas',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: AppColors.muted,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryContainer,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.school_outlined,
-                          size: 14,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _capitalize(user.subRole),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            // 1. Kartu Sapaan & Ringkasan Aktivitas Pelapor
+            _PelaporHeaderCard(
+              user: user,
+              isLoading: isLoading,
+              activeCount: activeReports.length,
+              resolvedCount: resolvedCount,
+              totalCount: reports.length,
             ),
 
             const SizedBox(height: AppSpacing.lg),
@@ -240,308 +136,72 @@ class _PelaporHomeState extends State<PelaporHome> {
 
             const SizedBox(height: AppSpacing.xl),
 
-            // 3. Kategori Fasilitas Populer (Grid Akses Cepat dengan Ikon)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: AppSpacing.sm),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.category_outlined,
-                    size: 16,
-                    color: AppColors.muted,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'KATEGORI FASILITAS',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.muted,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ],
-              ),
+            // 3. Status Aduan Aktif (Live Tracker)
+            _SectionHeader(
+              icon: Icons.pending_actions_rounded,
+              title: 'STATUS ADUAN AKTIF',
+              trailing: reports.isNotEmpty
+                  ? TextButton(
+                      onPressed: () =>
+                          setState(() => _currentTab = PelaporTab.riwayat),
+                      style: TextButton.styleFrom(
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xs,
+                          vertical: 2,
+                        ),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Lihat riwayat',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    )
+                  : null,
             ),
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _CategoryQuickItem(
-                          icon: Icons.bolt_rounded,
-                          label: 'Kelistrikan',
-                          bgColor: const Color(0xFFFFF8E1),
-                          iconColor: const Color(0xFFF57F17),
-                          onTap: () => _handleCategoryTap(context, 'Kelistrikan'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _CategoryQuickItem(
-                          icon: Icons.ac_unit_rounded,
-                          label: 'AC / Ruangan',
-                          bgColor: const Color(0xFFE0F7FA),
-                          iconColor: const Color(0xFF00838F),
-                          onTap: () => _handleCategoryTap(context, 'AC'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _CategoryQuickItem(
-                          icon: Icons.videocam_rounded,
-                          label: 'Proyektor',
-                          bgColor: const Color(0xFFEDE7F6),
-                          iconColor: const Color(0xFF5E35B1),
-                          onTap: () => _handleCategoryTap(context, 'Proyektor'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _CategoryQuickItem(
-                          icon: Icons.wifi_rounded,
-                          label: 'Wi-Fi & Net',
-                          bgColor: const Color(0xFFE8F5E9),
-                          iconColor: const Color(0xFF2E7D32),
-                          onTap: () => _handleCategoryTap(context, 'Wi-Fi'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _CategoryQuickItem(
-                          icon: Icons.water_drop_rounded,
-                          label: 'Sanitasi & Air',
-                          bgColor: const Color(0xFFE3F2FD),
-                          iconColor: const Color(0xFF1565C0),
-                          onTap: () => _handleCategoryTap(context, 'Sanitasi'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _CategoryQuickItem(
-                          icon: Icons.chair_alt_rounded,
-                          label: 'Mebel Kelas',
-                          bgColor: const Color(0xFFFBE9E7),
-                          iconColor: const Color(0xFFD84315),
-                          onTap: () => _handleCategoryTap(context, 'Mebel'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            _ActiveReportSection(
+              isLoading: isLoading,
+              hasError: snapshot.hasError,
+              activeReports: activeReports,
+              onViewHistory: () =>
+                  setState(() => _currentTab = PelaporTab.riwayat),
             ),
 
             const SizedBox(height: AppSpacing.xl),
 
-            // 4. Status Aduan Aktif (Live Tracker)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: AppSpacing.sm),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.pending_actions_rounded,
-                    size: 16,
-                    color: AppColors.muted,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'STATUS ADUAN AKTIF',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.muted,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ],
-              ),
+            // 4. Kategori & Standar Layanan (SLA) — Terpadu tanpa duplikasi
+            const _SectionHeader(
+              icon: Icons.category_outlined,
+              title: 'KATEGORI & TARGET LAYANAN',
             ),
-            if (activeReports.isNotEmpty)
-              _ActiveReportSummaryCard(report: activeReports.first)
-            else
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primaryContainer,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.check_circle_outline_rounded,
-                        color: AppColors.primary,
-                        size: 26,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Semua Fasilitas Terpantau Aman',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Tidak ada aduan aktif saat ini. Fasilitas kampus siap mendukung kegiatan perkuliahan.',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: AppColors.muted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: AppSpacing.xl),
-
-            // 5. Standar Layanan Fasilitas Kampus (SLA)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: AppSpacing.sm),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.speed_rounded,
-                    size: 16,
-                    color: AppColors.muted,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'STANDAR LAYANAN FASILITAS',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.muted,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.sm),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: const Column(
-                children: [
-                  _ServiceCategoryRow(
-                    icon: Icons.bolt_rounded,
-                    iconBg: Color(0xFFFFF8E1),
-                    iconColor: Color(0xFFF57F17),
-                    nama: 'Kelistrikan & Lampu',
-                    sla: '2 Jam',
-                    prioritas: 'Darurat',
-                  ),
-                  Divider(height: 1),
-                  _ServiceCategoryRow(
-                    icon: Icons.ac_unit_rounded,
-                    iconBg: Color(0xFFE0F7FA),
-                    iconColor: Color(0xFF00838F),
-                    nama: 'AC & Pendingin Ruangan',
-                    sla: '6 Jam',
-                    prioritas: 'Tinggi',
-                  ),
-                  Divider(height: 1),
-                  _ServiceCategoryRow(
-                    icon: Icons.videocam_rounded,
-                    iconBg: Color(0xFFEDE7F6),
-                    iconColor: Color(0xFF5E35B1),
-                    nama: 'Proyektor & Presentasi',
-                    sla: '4 Jam',
-                    prioritas: 'Tinggi',
-                  ),
-                  Divider(height: 1),
-                  _ServiceCategoryRow(
-                    icon: Icons.wifi_rounded,
-                    iconBg: Color(0xFFE8F5E9),
-                    iconColor: Color(0xFF2E7D32),
-                    nama: 'Wi-Fi & Jaringan Internet',
-                    sla: '4 Jam',
-                    prioritas: 'Tinggi',
-                  ),
-                  Divider(height: 1),
-                  _ServiceCategoryRow(
-                    icon: Icons.water_drop_rounded,
-                    iconBg: Color(0xFFE3F2FD),
-                    iconColor: Color(0xFF1565C0),
-                    nama: 'Toilet & Sanitasi',
-                    sla: '8 Jam',
-                    prioritas: 'Sedang',
-                  ),
-                  Divider(height: 1),
-                  _ServiceCategoryRow(
-                    icon: Icons.chair_alt_rounded,
-                    iconBg: Color(0xFFFBE9E7),
-                    iconColor: Color(0xFFD84315),
-                    nama: 'Ruang Kelas & Mebel',
-                    sla: '24 Jam',
-                    prioritas: 'Rendah',
-                  ),
-                ],
-              ),
+            _FacilityCategoryGrid(
+              onCategoryTap: (cat) => _handleCategoryTap(context, cat),
             ),
 
             const SizedBox(height: AppSpacing.xl),
 
-            // 6. Alur Penanganan Laporan (3 Langkah Mudah)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: AppSpacing.sm),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.route_outlined,
-                    size: 16,
-                    color: AppColors.muted,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'ALUR PENANGANAN LAPORAN',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.muted,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ],
-              ),
+            // 5. Alur Penanganan Laporan (3 Langkah)
+            const _SectionHeader(
+              icon: Icons.route_outlined,
+              title: 'ALUR PENANGANAN LAPORAN',
             ),
             Container(
               padding: const EdgeInsets.all(AppSpacing.lg),
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade200),
+                border: Border.all(color: AppColors.border),
               ),
               child: const Column(
                 children: [
                   _StepRow(
                     nomor: '1',
                     icon: Icons.qr_code_scanner_rounded,
+                    accentColor: AppColors.primary,
+                    accentBg: AppColors.primaryContainer,
                     judul: 'Pindai Kode QR Ruangan',
                     deskripsi:
                         'Arahkan kamera ke stiker QR yang menempel di pintu atau meja fasilitas.',
@@ -550,17 +210,21 @@ class _PelaporHomeState extends State<PelaporHome> {
                   _StepRow(
                     nomor: '2',
                     icon: Icons.auto_awesome_rounded,
+                    accentColor: AppColors.secondary,
+                    accentBg: AppColors.secondaryContainer,
                     judul: 'Foto Kerusakan & Analisis AI',
                     deskripsi:
-                        'Sistem cerdas AI otomatis mendeteksi kategori dan tingkat urgensi penanganan.',
+                        'Sistem AI otomatis mendeteksi kategori dan tingkat urgensi penanganan.',
                   ),
                   SizedBox(height: AppSpacing.md),
                   _StepRow(
                     nomor: '3',
                     icon: Icons.engineering_rounded,
+                    accentColor: AppColors.info,
+                    accentBg: AppColors.infoContainer,
                     judul: 'Penanganan & Hasil Perbaikan',
                     deskripsi:
-                        'Teknisi diterjunkan ke lokasi dan melampirkan foto hasil selesai perbaikan.',
+                        'Teknisi diterjunkan ke lokasi dan melampirkan foto hasil perbaikan.',
                   ),
                 ],
               ),
@@ -573,23 +237,28 @@ class _PelaporHomeState extends State<PelaporHome> {
     );
   }
 
-  void _handleCategoryTap(BuildContext context, String kategori) {
-    ScaffoldMessenger.of(context).showSnackBar(
+  void _handleCategoryTap(
+    BuildContext context,
+    _FacilityCategoryData category,
+  ) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.qr_code_scanner, color: Colors.white, size: 20),
+            Icon(category.icon, color: AppColors.surface, size: 20),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Silakan pindai QR ruangan untuk melapor $kategori.',
+                '${category.label} (Prioritas ${category.prioritas}, target SLA ${category.sla}). Pindai QR ruangan untuk melapor.',
               ),
             ),
           ],
         ),
         action: SnackBarAction(
-          label: 'Pindai Sekarang',
-          textColor: Colors.amber,
+          label: 'Pindai',
+          textColor: AppColors.accentContainer,
           onPressed: () {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -646,6 +315,368 @@ class _PelaporHomeState extends State<PelaporHome> {
   }
 }
 
+// ── Header & Ringkasan Pelapor ───────────────────────────────────────────────
+
+class _PelaporHeaderCard extends StatelessWidget {
+  const _PelaporHeaderCard({
+    required this.user,
+    required this.isLoading,
+    required this.activeCount,
+    required this.resolvedCount,
+    required this.totalCount,
+  });
+
+  final AppUser user;
+  final bool isLoading;
+  final int activeCount;
+  final int resolvedCount;
+  final int totalCount;
+
+  static String _capitalize(String s) =>
+      s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+  static IconData _subRoleIcon(String subRole) {
+    switch (subRole) {
+      case 'dosen':
+        return Icons.cast_for_education_outlined;
+      case 'staf':
+        return Icons.badge_outlined;
+      default:
+        return Icons.school_outlined;
+    }
+  }
+
+  String _subtitleText() {
+    if (user.identityNumber.isEmpty) {
+      return 'Layanan Pelaporan Kampus';
+    }
+    final prefix = user.subRole == 'mahasiswa' ? 'NIM' : 'NIP';
+    return '$prefix ${user.identityNumber}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x080F172A),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Halo, ${user.nama}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.ink,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _subtitleText(),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.muted,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.highlight,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.highlightBorder),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _subRoleIcon(user.subRole),
+                      size: 14,
+                      color: AppColors.primaryDark,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _capitalize(user.subRole),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: AppColors.primaryDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const Divider(height: 1),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: _HeaderStatItem(
+                  label: 'Aktif',
+                  value: isLoading ? '-' : '$activeCount',
+                  valueColor:
+                      activeCount > 0 ? AppColors.warning : AppColors.primary,
+                ),
+              ),
+              Container(width: 1, height: 28, color: AppColors.border),
+              Expanded(
+                child: _HeaderStatItem(
+                  label: 'Selesai',
+                  value: isLoading ? '-' : '$resolvedCount',
+                  valueColor: AppColors.success,
+                ),
+              ),
+              Container(width: 1, height: 28, color: AppColors.border),
+              Expanded(
+                child: _HeaderStatItem(
+                  label: 'Total',
+                  value: isLoading ? '-' : '$totalCount',
+                  valueColor: AppColors.ink,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderStatItem extends StatelessWidget {
+  const _HeaderStatItem({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: valueColor,
+          ),
+        ),
+        Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: AppColors.muted,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Section Header Reusable ──────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.icon,
+    required this.title,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: AppSpacing.sm),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.muted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              title,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: AppColors.muted,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Status Aduan Aktif Section ───────────────────────────────────────────────
+
+class _ActiveReportSection extends StatelessWidget {
+  const _ActiveReportSection({
+    required this.isLoading,
+    required this.hasError,
+    required this.activeReports,
+    required this.onViewHistory,
+  });
+
+  final bool isLoading;
+  final bool hasError;
+  final List<Report> activeReports;
+  final VoidCallback onViewHistory;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (isLoading) {
+      return Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            const SizedBox.square(
+              dimension: 20,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Text(
+              'Memuat status aduan aktif…',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.muted,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (hasError) {
+      return Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: AppColors.dangerContainer,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.cloud_off_rounded,
+              color: AppColors.danger,
+              size: 24,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Text(
+                'Gagal memuat aduan aktif. Periksa koneksi internet Anda.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.ink,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (activeReports.isNotEmpty) {
+      return _ActiveReportSummaryCard(
+        report: activeReports.first,
+        totalActive: activeReports.length,
+        onViewMore: activeReports.length > 1 ? onViewHistory : null,
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.highlight,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.highlightBorder),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.highlightBorder),
+            ),
+            child: const Icon(
+              Icons.check_circle_rounded,
+              color: AppColors.primary,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Semua Fasilitas Terpantau Aman',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Tidak ada aduan aktif saat ini. Laporkan segera bila menemukan kerusakan.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Kartu aksi utama dengan banner gradien hijau kampus dan ilustrasi ikon QR.
 class _BuatLaporanCard extends StatelessWidget {
   const _BuatLaporanCard({required this.user});
@@ -656,18 +687,11 @@ class _BuatLaporanCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF0F7A3C),
-            Color(0xFF13964B),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: AppColors.heroGradient,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF108A43).withValues(alpha: 0.25),
+            color: AppColors.primary.withValues(alpha: 0.25),
             offset: const Offset(0, 6),
             blurRadius: 16,
           ),
@@ -675,7 +699,6 @@ class _BuatLaporanCard extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Aksen dekoratif ikon QR transparan di pojok kanan
           Positioned(
             right: -10,
             bottom: -10,
@@ -700,10 +723,10 @@ class _BuatLaporanCard extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 10,
-                              vertical: 3,
+                              vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
+                              color: AppColors.primaryDark,
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: const Row(
@@ -752,16 +775,12 @@ class _BuatLaporanCard extends StatelessWidget {
                       width: 52,
                       height: 52,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          width: 1.5,
-                        ),
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(14),
                       ),
                       child: const Icon(
                         Icons.qr_code_scanner_rounded,
-                        color: Colors.white,
+                        color: AppColors.primaryDark,
                         size: 28,
                       ),
                     ),
@@ -777,18 +796,18 @@ class _BuatLaporanCard extends StatelessWidget {
                   icon: const Icon(
                     Icons.qr_code_scanner_rounded,
                     size: 20,
-                    color: AppColors.primary,
+                    color: AppColors.primaryDark,
                   ),
                   label: const Text(
                     'Pindai QR ruangan',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      color: AppColors.primaryDark,
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: AppColors.primary,
+                    backgroundColor: AppColors.surface,
+                    foregroundColor: AppColors.primaryDark,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.lg,
@@ -808,20 +827,150 @@ class _BuatLaporanCard extends StatelessWidget {
   }
 }
 
-/// Item tombol kategori fasilitas cepat dengan ikon berwarna.
-class _CategoryQuickItem extends StatelessWidget {
-  const _CategoryQuickItem({
+// ── Kategori & Standar Layanan Terpadu ───────────────────────────────────────
+
+class _FacilityCategoryData {
+  const _FacilityCategoryData({
     required this.icon,
     required this.label,
-    required this.bgColor,
+    required this.sla,
+    required this.prioritas,
+    required this.iconBg,
     required this.iconColor,
-    required this.onTap,
+    required this.priorityBg,
+    required this.priorityColor,
   });
 
   final IconData icon;
   final String label;
-  final Color bgColor;
+  final String sla;
+  final String prioritas;
+  final Color iconBg;
   final Color iconColor;
+  final Color priorityBg;
+  final Color priorityColor;
+}
+
+const List<_FacilityCategoryData> _facilityCategories = [
+  _FacilityCategoryData(
+    icon: Icons.bolt_rounded,
+    label: 'Kelistrikan',
+    sla: '2 Jam',
+    prioritas: 'Darurat',
+    iconBg: AppColors.warningContainer,
+    iconColor: AppColors.warning,
+    priorityBg: AppColors.dangerContainer,
+    priorityColor: AppColors.danger,
+  ),
+  _FacilityCategoryData(
+    icon: Icons.ac_unit_rounded,
+    label: 'AC / Ruangan',
+    sla: '6 Jam',
+    prioritas: 'Tinggi',
+    iconBg: AppColors.secondaryContainer,
+    iconColor: AppColors.secondary,
+    priorityBg: AppColors.warningContainer,
+    priorityColor: AppColors.warning,
+  ),
+  _FacilityCategoryData(
+    icon: Icons.videocam_rounded,
+    label: 'Proyektor',
+    sla: '4 Jam',
+    prioritas: 'Tinggi',
+    iconBg: AppColors.infoContainer,
+    iconColor: AppColors.info,
+    priorityBg: AppColors.warningContainer,
+    priorityColor: AppColors.warning,
+  ),
+  _FacilityCategoryData(
+    icon: Icons.wifi_rounded,
+    label: 'Wi-Fi & Net',
+    sla: '4 Jam',
+    prioritas: 'Tinggi',
+    iconBg: AppColors.primaryContainer,
+    iconColor: AppColors.primary,
+    priorityBg: AppColors.warningContainer,
+    priorityColor: AppColors.warning,
+  ),
+  _FacilityCategoryData(
+    icon: Icons.water_drop_rounded,
+    label: 'Sanitasi & Air',
+    sla: '8 Jam',
+    prioritas: 'Sedang',
+    iconBg: AppColors.infoContainer,
+    iconColor: AppColors.info,
+    priorityBg: AppColors.infoContainer,
+    priorityColor: AppColors.info,
+  ),
+  _FacilityCategoryData(
+    icon: Icons.chair_alt_rounded,
+    label: 'Mebel Kelas',
+    sla: '24 Jam',
+    prioritas: 'Rendah',
+    iconBg: AppColors.surfaceVariant,
+    iconColor: AppColors.muted,
+    priorityBg: AppColors.surfaceVariant,
+    priorityColor: AppColors.muted,
+  ),
+];
+
+class _FacilityCategoryGrid extends StatelessWidget {
+  const _FacilityCategoryGrid({required this.onCategoryTap});
+
+  final ValueChanged<_FacilityCategoryData> onCategoryTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              for (int i = 0; i < 3; i++) ...[
+                if (i > 0) const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: _CategoryQuickItem(
+                    data: _facilityCategories[i],
+                    onTap: () => onCategoryTap(_facilityCategories[i]),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              for (int i = 3; i < 6; i++) ...[
+                if (i > 3) const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: _CategoryQuickItem(
+                    data: _facilityCategories[i],
+                    onTap: () => onCategoryTap(_facilityCategories[i]),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Item tombol kategori fasilitas cepat lengkap dengan badge target SLA.
+class _CategoryQuickItem extends StatelessWidget {
+  const _CategoryQuickItem({
+    required this.data,
+    required this.onTap,
+  });
+
+  final _FacilityCategoryData data;
   final VoidCallback onTap;
 
   @override
@@ -834,32 +983,54 @@ class _CategoryQuickItem extends StatelessWidget {
           horizontal: AppSpacing.xs,
           vertical: AppSpacing.sm,
         ),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+        ),
         child: Column(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
-                color: bgColor,
+                color: data.iconBg,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
-                icon,
-                color: iconColor,
-                size: 24,
+                data.icon,
+                color: data.iconColor,
+                size: 22,
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              label,
+              data.label,
               style: const TextStyle(
-                fontSize: 11,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: AppColors.ink,
               ),
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: data.priorityBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'SLA ${data.sla}',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: data.priorityColor,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -868,21 +1039,92 @@ class _CategoryQuickItem extends StatelessWidget {
   }
 }
 
-/// Kartu ringkasan tiket aktif yang sedang berjalan dengan ikon indikator status.
+// ── Kartu Ringkasan Tiket Aktif dengan Status Semantik ───────────────────────
+
+class _StatusBadgeStyle {
+  const _StatusBadgeStyle({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.bgColor,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final Color bgColor;
+
+  factory _StatusBadgeStyle.fromStatus(ReportStatus status) {
+    switch (status) {
+      case ReportStatus.reported:
+        return const _StatusBadgeStyle(
+          label: 'Menunggu Verifikasi',
+          icon: Icons.hourglass_top_rounded,
+          color: AppColors.warning,
+          bgColor: AppColors.warningContainer,
+        );
+      case ReportStatus.verified:
+        return const _StatusBadgeStyle(
+          label: 'Terverifikasi',
+          icon: Icons.verified_outlined,
+          color: AppColors.info,
+          bgColor: AppColors.infoContainer,
+        );
+      case ReportStatus.assigned:
+        return const _StatusBadgeStyle(
+          label: 'Teknisi Ditugaskan',
+          icon: Icons.engineering_outlined,
+          color: AppColors.secondary,
+          bgColor: AppColors.secondaryContainer,
+        );
+      case ReportStatus.inProgress:
+        return const _StatusBadgeStyle(
+          label: 'Sedang Dikerjakan',
+          icon: Icons.sync_rounded,
+          color: AppColors.primary,
+          bgColor: AppColors.primaryContainer,
+        );
+      case ReportStatus.resolved:
+        return const _StatusBadgeStyle(
+          label: 'Selesai',
+          icon: Icons.check_circle_outline_rounded,
+          color: AppColors.success,
+          bgColor: AppColors.successContainer,
+        );
+      case ReportStatus.rejected:
+        return const _StatusBadgeStyle(
+          label: 'Ditolak',
+          icon: Icons.cancel_outlined,
+          color: AppColors.danger,
+          bgColor: AppColors.dangerContainer,
+        );
+    }
+  }
+}
+
+/// Kartu ringkasan tiket aktif yang sedang berjalan dengan warna semantik status.
 class _ActiveReportSummaryCard extends StatelessWidget {
-  const _ActiveReportSummaryCard({required this.report});
+  const _ActiveReportSummaryCard({
+    required this.report,
+    required this.totalActive,
+    this.onViewMore,
+  });
 
   final Report report;
+  final int totalActive;
+  final VoidCallback? onViewMore;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final statusStyle = _StatusBadgeStyle.fromStatus(report.status);
+
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -893,12 +1135,12 @@ class _ActiveReportSummaryCard extends StatelessWidget {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: AppColors.primaryContainer,
+                  color: statusStyle.bgColor,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
-                  Icons.build_rounded,
-                  color: AppColors.primary,
+                child: Icon(
+                  statusStyle.icon,
+                  color: statusStyle.color,
                   size: 20,
                 ),
               ),
@@ -913,7 +1155,10 @@ class _ActiveReportSummaryCard extends StatelessWidget {
                           : 'Laporan Fasilitas',
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
+                        color: AppColors.ink,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     if (report.ticketNumber.isNotEmpty)
                       Text(
@@ -926,32 +1171,22 @@ class _ActiveReportSummaryCard extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: AppSpacing.xs),
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.sm,
-                  vertical: 3,
+                  vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: AppColors.primaryContainer,
+                  color: statusStyle.bgColor,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.sync_rounded,
-                      size: 12,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      report.status.label,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  statusStyle.label,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: statusStyle.color,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -971,104 +1206,48 @@ class _ActiveReportSummaryCard extends StatelessWidget {
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: AppColors.muted,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             report.deskripsi,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall,
+            style: theme.textTheme.bodySmall?.copyWith(color: AppColors.ink),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Baris kategori layanan fasilitas kampus beserta target SLA dan ikon.
-class _ServiceCategoryRow extends StatelessWidget {
-  const _ServiceCategoryRow({
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.nama,
-    required this.sla,
-    required this.prioritas,
-  });
-
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String nama;
-  final String sla;
-  final String prioritas;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.sm,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: iconBg,
+          if (onViewMore != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            const Divider(height: 1),
+            const SizedBox(height: AppSpacing.xs),
+            InkWell(
+              onTap: onViewMore,
               borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              icon,
-              size: 18,
-              color: iconColor,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              nama,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '+${totalActive - 1} aduan aktif lainnya',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: AppColors.primaryDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 13,
+                      color: AppColors.primaryDark,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: 3,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceVariant,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.schedule_rounded,
-                  size: 12,
-                  color: AppColors.primary,
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  sla,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ],
         ],
       ),
     );
@@ -1082,12 +1261,16 @@ class _StepRow extends StatelessWidget {
     required this.icon,
     required this.judul,
     required this.deskripsi,
+    this.accentColor = AppColors.primary,
+    this.accentBg = AppColors.primaryContainer,
   });
 
   final String nomor;
   final IconData icon;
   final String judul;
   final String deskripsi;
+  final Color accentColor;
+  final Color accentBg;
 
   @override
   Widget build(BuildContext context) {
@@ -1099,33 +1282,36 @@ class _StepRow extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
-                color: AppColors.primaryContainer,
-                borderRadius: BorderRadius.circular(10),
+                color: accentBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: accentColor.withValues(alpha: 0.25),
+                ),
               ),
               child: Icon(
                 icon,
-                color: AppColors.primary,
+                color: accentColor,
                 size: 22,
               ),
             ),
             Positioned(
-              top: -4,
-              left: -4,
+              top: -5,
+              left: -5,
               child: Container(
-                width: 16,
-                height: 16,
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: accentColor,
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
                 child: Text(
                   nomor,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AppColors.surface,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1142,7 +1328,8 @@ class _StepRow extends StatelessWidget {
               Text(
                 judul,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.ink,
                 ),
               ),
               const SizedBox(height: 2),

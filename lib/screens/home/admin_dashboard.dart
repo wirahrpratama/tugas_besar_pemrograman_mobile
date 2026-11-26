@@ -6,9 +6,9 @@ import '../../services/report_repository.dart';
 import '../../services/report_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/app_top_bar.dart';
 import '../../widgets/report_photo.dart';
 import '../../widgets/seed_master_data_button.dart';
-import '../profile/profile_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key, required this.user});
@@ -35,20 +35,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
     return Scaffold(
       backgroundColor: AppColors.surfaceVariant,
-      appBar: AppBar(
-        title: const Text('Dashboard Admin'),
-        backgroundColor: AppColors.surface,
-        actions: [
-          IconButton(
-            tooltip: 'Profil',
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ProfileScreen(uid: widget.user.uid),
-              ),
-            ),
-          ),
-        ],
+      appBar: AppTopBar(
+        title: 'Dashboard Admin',
+        profileUid: widget.user.uid,
+        userName: widget.user.nama,
+        photoUrl: widget.user.photoUrl,
       ),
       body: StreamBuilder<List<Report>>(
         stream: repository.watchReportsForAdmin(
@@ -206,9 +197,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _buildWithoutData(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.surfaceVariant,
-      appBar: AppBar(
-        title: const Text('Dashboard Admin'),
-        backgroundColor: AppColors.surface,
+      appBar: AppTopBar(
+        title: 'Dashboard Admin',
+        profileUid: widget.user.uid,
+        userName: widget.user.nama,
+        photoUrl: widget.user.photoUrl,
       ),
       body: SafeArea(
         child: Column(
@@ -254,8 +247,15 @@ class _AdminWelcomeCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(16),
+        gradient: AppColors.heroGradient,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -263,6 +263,22 @@ class _AdminWelcomeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryDark,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'Administrator',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
                   'Halo, $name',
                   maxLines: 1,
@@ -286,7 +302,7 @@ class _AdminWelcomeCard extends StatelessWidget {
           const CircleAvatar(
             radius: 25,
             backgroundColor: Colors.white,
-            foregroundColor: AppColors.primary,
+            foregroundColor: AppColors.primaryDark,
             child: Icon(Icons.admin_panel_settings_outlined, size: 28),
           ),
         ],

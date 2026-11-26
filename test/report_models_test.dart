@@ -536,4 +536,42 @@ void main() {
       expect(find.text('Foto gagal dimuat'), findsOneWidget);
     });
   });
+
+  group('AppUser fromMap & toMap', () {
+    test('membaca dan menulis photo_url serta pending_email opsional', () {
+      final user = AppUser.fromMap('u-1', {
+        'nama': 'Rina Putri',
+        'identity_number': '241402001',
+        'email': 'rina@usu.ac.id',
+        'sub_role': 'mahasiswa',
+        'role': 'pelapor',
+        'photo_url': 'photo:abc',
+        'pending_email': 'rina.baru@usu.ac.id',
+      });
+
+      expect(user.photoUrl, 'photo:abc');
+      expect(user.pendingEmail, 'rina.baru@usu.ac.id');
+      expect(user.toMap(), {
+        'nama': 'Rina Putri',
+        'identity_number': '241402001',
+        'email': 'rina@usu.ac.id',
+        'sub_role': 'mahasiswa',
+        'role': 'pelapor',
+        'photo_url': 'photo:abc',
+        'pending_email': 'rina.baru@usu.ac.id',
+      });
+
+      final plain = AppUser.fromMap('u-2', {
+        'nama': 'Polos',
+        'identity_number': '123',
+        'email': 'polos@usu.ac.id',
+        'sub_role': 'staf',
+        'role': 'pelapor',
+      });
+      expect(plain.photoUrl, isNull);
+      expect(plain.pendingEmail, isNull);
+      expect(plain.toMap().containsKey('photo_url'), isFalse);
+      expect(plain.toMap().containsKey('pending_email'), isFalse);
+    });
+  });
 }
