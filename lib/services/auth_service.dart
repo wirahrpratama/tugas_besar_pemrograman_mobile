@@ -95,10 +95,15 @@ class AuthService {
 
   Future<void> signIn({required String email, required String password}) async {
     try {
-      await _auth.signInWithEmailAndPassword(
+      final credential = await _auth.signInWithEmailAndPassword(
         email: email.trim().toLowerCase(),
         password: password,
       );
+      final user = credential.user;
+      final authEmail = user?.email?.trim().toLowerCase();
+      if (user != null && authEmail != null && authEmail.isNotEmpty) {
+        await _syncEmailIfNeeded(user.uid, authEmail);
+      }
     } on FirebaseAuthException catch (e) {
       throw AuthException(_messageFor(e));
     }
@@ -147,6 +152,103 @@ class AuthService {
       await _auth.currentUser?.updateDisplayName(trimmed);
     } on FirebaseException catch (e) {
       throw AuthException('Gagal memperbarui nama (${e.code}).');
+    }
+  }
+
+  Future<void> updatePhotoUrl(String uid, String? photoUrl) async {
+    final trimmed = photoUrl?.trim();
+    final value = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+    try {
+      await _userDoc(uid).update({'photo_url': value});
+    } on FirebaseException catch (e) {
+      throw AuthException('Gagal memperbarui foto profil (${e.code}).');
+    }
+  }
+
+  /// Mengirim tautan verifikasi ke [newEmail] setelah re-autentikasi dengan
+  /// [currentPassword]. Email di Firebase Auth berubah otomatis setelah tautan
+  /// diklik oleh pengguna, lalu dapat disinkronkan via [syncEmailChange].
+  Future<void> requestEmailChange({
+    required String uid,
+    required String newEmail,
+    required String currentPassword,
+  }) async {
+    final user = _auth.currentUser;
+    final currentEmail = user?.email?.trim();
+    if (user == null || currentEmail == null || currentEmail.isEmpty) {
+      throw const AuthException(
+        'Sesi login tidak ditemukan. Silakan masuk kembali.',
+      );
+    }
+
+    final normalized = newEmail.trim().toLowerCase();
+    if (normalized == currentEmail.toLowerCase()) {
+      throw const AuthException('Email baru harus berbeda dari email saat ini.');
+    }
+
+    try {
+      await user.reauthenticateWithCredential(
+        EmailAuthProvider.credential(
+          email: currentEmail,
+          password: currentPassword,
+        ),
+      );
+      await user.verifyBeforeUpdateEmail(normalized);
+      await _userDoc(uid).update({'pending_email': normalized});
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'wrong-password' ||
+          e.code == 'invalid-credential' ||
+          e.code == 'INVALID_LOGIN_CREDENTIALS') {
+        throw const AuthException('Password saat ini salah.');
+      }
+      throw AuthException(_messageFor(e));
+    } on FirebaseException catch (e) {
+      throw AuthException('Gagal memperbarui email (${e.code}).');
+    }
+  }
+
+  /// Memuat ulang akun Firebase Auth dan menyinkronkan email baru ke Firestore
+  /// bila tautan verifikasi ubah email sudah diklik.
+  Future<bool> syncEmailChange(String uid) async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    try {
+      await user.reload();
+      final refreshed = _auth.currentUser;
+      final authEmail = refreshed?.email?.trim().toLowerCase();
+      if (refreshed == null || authEmail == null || authEmail.isEmpty) {
+        return false;
+      }
+      final changed = await _syncEmailIfNeeded(uid, authEmail);
+      if (changed) {
+        await refreshed.getIdToken(true);
+      }
+      return changed;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_messageFor(e));
+    } on FirebaseException catch (e) {
+      throw AuthException('Gagal menyinkronkan email (${e.code}).');
+    }
+  }
+
+  Future<bool> _syncEmailIfNeeded(String uid, String authEmail) async {
+    try {
+      final snap = await _userDoc(uid).get();
+      final data = snap.data();
+      if (data == null) return false;
+      final storedEmail = (data['email'] ?? '').toString().trim().toLowerCase();
+      final pendingEmail =
+          (data['pending_email'] ?? '').toString().trim().toLowerCase();
+      if (storedEmail == authEmail && pendingEmail.isEmpty) {
+        return false;
+      }
+      if (storedEmail != authEmail) {
+        await _userDoc(uid).update({'email': authEmail, 'pending_email': null});
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 

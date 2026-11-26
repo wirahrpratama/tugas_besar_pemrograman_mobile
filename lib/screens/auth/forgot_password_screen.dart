@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
+import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../utils/validators.dart';
 import '../../widgets/loading_button.dart';
@@ -55,6 +56,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return AuthScaffold(
       appBar: AppBar(title: const Text('Lupa Password')),
       child: Form(
@@ -62,20 +64,108 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Masukkan email akun Anda. Kami akan mengirim tautan untuk membuat password baru.',
+            // ── Ilustrasi / Icon besar ─────────────────────────────
+            Center(
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  gradient: AppColors.heroGradient,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withAlpha(51),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.lock_reset_rounded,
+                  size: 48,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+
+            // ── Judul & Deskripsi ──────────────────────────────────
+            Text(
+              'Reset Password',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: AppColors.ink,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Masukkan email akun Anda. Kami akan mengirimkan tautan untuk membuat password baru.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: AppColors.muted,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: AppSpacing.xl),
-            TextFormField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.done,
-              onFieldSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.email_outlined),
+
+            // ── Langkah-langkah ────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.highlightBorder),
               ),
-              validator: Validators.email,
+              child: Column(
+                children: [
+                  _StepRow(
+                    number: 1,
+                    text: 'Masukkan email yang terdaftar',
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _StepRow(
+                    number: 2,
+                    text: 'Cek kotak masuk atau folder spam',
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _StepRow(
+                    number: 3,
+                    text: 'Klik tautan reset & buat password baru',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // ── Form ──────────────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x0A0F172A),
+                    blurRadius: 12,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: TextFormField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) => _submit(),
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  hintText: 'nama@email.com',
+                  prefixIcon: Icon(Icons.email_outlined),
+                ),
+                validator: Validators.email,
+              ),
             ),
             const SizedBox(height: AppSpacing.xl),
             LoadingButton(
@@ -86,6 +176,53 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Helper widget ──────────────────────────────────────────────────────────
+
+class _StepRow extends StatelessWidget {
+  const _StepRow({required this.number, required this.text});
+
+  final int number;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          decoration: const BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              '$number',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              color: AppColors.ink,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

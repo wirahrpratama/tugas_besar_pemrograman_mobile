@@ -43,11 +43,13 @@ void main() {
     expect(find.text('NIM'), findsNothing);
   });
 
-  testWidgets('Register menolak email non-kampus', (tester) async {
+  testWidgets('Register menerima email umum dan menolak format salah', (
+    tester,
+  ) async {
     await tester.pumpWidget(_wrap(const RegisterScreen()));
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'Email Kampus'),
+      find.widgetWithText(TextFormField, 'Email'),
       'leondo@gmail.com',
     );
     final daftarButton = find.widgetWithText(FilledButton, 'Daftar');
@@ -57,7 +59,17 @@ void main() {
 
     expect(
       find.text('Gunakan email kampus (@students.usu.ac.id atau @usu.ac.id).'),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.text('Format email tidak valid.'), findsNothing);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Email'),
+      'bukan-email',
+    );
+    await tester.tap(daftarButton);
+    await tester.pump();
+
+    expect(find.text('Format email tidak valid.'), findsOneWidget);
   });
 }

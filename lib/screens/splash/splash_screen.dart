@@ -6,7 +6,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../theme/app_colors.dart';
 import '../../theme/app_icon_size.dart';
-import '../../theme/app_spacing.dart';
 import '../../utils/storage_keys.dart';
 import '../auth_gate.dart';
 import '../onboarding/onboarding_screen.dart';
@@ -73,6 +72,8 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _navigate() async {
     final completed = await StorageKeys.isOnboardingCompleted();
     if (!mounted) return;
+
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
     final Widget destination;
     if (widget.destinationBuilder != null) {
@@ -175,12 +176,16 @@ class _SplashScreenState extends State<SplashScreen> {
           .fadeIn(duration: _textDur.ms, curve: Curves.easeOut);
     }
 
-    // ── Konten Brand (Logo di atas, Teks di bawah) ─────────────────────
+    // ── Konten Brand (Logo di atas, Teks di bawah rapat & terpusat) ────────
     Widget brand = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        logoImg,
-        const SizedBox(height: AppSpacing.lg),
+        Align(
+          alignment: Alignment.center,
+          heightFactor: 0.48,
+          child: logoImg,
+        ),
+        const SizedBox(height: 8),
         brandText,
       ],
     );

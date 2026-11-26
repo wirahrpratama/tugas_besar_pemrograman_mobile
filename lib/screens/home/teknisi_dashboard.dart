@@ -10,8 +10,8 @@ import '../../services/report_repository.dart';
 import '../../services/report_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/app_top_bar.dart';
 import '../../widgets/report_photo.dart';
-import '../profile/profile_screen.dart';
 
 class TeknisiDashboard extends StatelessWidget {
   const TeknisiDashboard({super.key, required this.user});
@@ -50,18 +50,11 @@ class _TechnicianScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.surfaceVariant,
-      appBar: AppBar(
-        title: const Text('Tugas Teknisi'),
-        backgroundColor: AppColors.surface,
-        actions: [
-          IconButton(
-            tooltip: 'Profil',
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => ProfileScreen(uid: user.uid)),
-            ),
-          ),
-        ],
+      appBar: AppTopBar(
+        title: 'Tugas Teknisi',
+        profileUid: user.uid,
+        userName: user.nama,
+        photoUrl: user.photoUrl,
       ),
       body: body,
     );
@@ -244,8 +237,15 @@ class _TechnicianWelcomeCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(16),
+        gradient: AppColors.heroGradient,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -253,6 +253,22 @@ class _TechnicianWelcomeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryDark,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'Teknisi Lapangan',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
                   'Halo, $name',
                   maxLines: 1,
@@ -276,7 +292,7 @@ class _TechnicianWelcomeCard extends StatelessWidget {
           const CircleAvatar(
             radius: 25,
             backgroundColor: Colors.white,
-            foregroundColor: AppColors.primary,
+            foregroundColor: AppColors.primaryDark,
             child: Icon(Icons.engineering_outlined, size: 28),
           ),
         ],

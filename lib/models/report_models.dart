@@ -126,6 +126,8 @@ class AppUser {
   final String email;
   final String subRole; // mahasiswa | dosen | staf | admin | teknisi
   final UserRole role;
+  final String? photoUrl;
+  final String? pendingEmail;
 
   const AppUser({
     required this.uid,
@@ -134,6 +136,8 @@ class AppUser {
     required this.email,
     required this.subRole,
     required this.role,
+    this.photoUrl,
+    this.pendingEmail,
   });
 
   factory AppUser.fromMap(String uid, Map<String, dynamic> map) {
@@ -145,6 +149,8 @@ class AppUser {
       email: (map['email'] ?? '').toString(),
       subRole: (map['sub_role'] ?? 'mahasiswa').toString(),
       role: UserRole.fromString(roleStr),
+      photoUrl: _nullableString(map['photo_url']),
+      pendingEmail: _nullableString(map['pending_email']),
     );
   }
 
@@ -154,6 +160,8 @@ class AppUser {
         'email': email,
         'sub_role': subRole,
         'role': role.name,
+        if (photoUrl != null) 'photo_url': photoUrl,
+        if (pendingEmail != null) 'pending_email': pendingEmail,
       };
 }
 

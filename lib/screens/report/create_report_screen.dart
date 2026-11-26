@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../models/report_models.dart';
+import '../../theme/app_spacing.dart';
+import '../../widgets/app_top_bar.dart';
 import 'report_submitted_screen.dart';
 
 /// Layar form laporan. Langkah 1: kerangka saja.
@@ -28,8 +30,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     // hasil tidak kembali ke form yang sudah terkirim.
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => const ReportSubmittedScreen(
-          result: {
+        builder: (_) => ReportSubmittedScreen(
+          userUid: widget.user.uid,
+          userName: widget.user.nama,
+          result: const {
             'merged': false,
             'ticket_number': 'CONTOH-0001',
             'message': 'Data contoh, belum dikirim ke server.',
@@ -44,44 +48,68 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     final theme = Theme.of(context);
     final location = widget.location;
     return Scaffold(
-      appBar: AppBar(title: const Text('Buat laporan')),
+      appBar: AppTopBar(
+        title: 'Buat laporan',
+        profileUid: widget.user.uid,
+        userName: widget.user.nama,
+        photoUrl: widget.user.photoUrl,
+      ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Lokasi', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                leading: Icon(
-                  Icons.meeting_room_outlined,
-                  color: theme.colorScheme.primary,
-                ),
-                title: Text(location.namaRuangan),
-                subtitle: Text(
-                  '${location.namaGedung} · ${location.kodeRuangan} · '
-                  'Lantai ${location.lantai}',
-                ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.md,
+                0,
+              ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: AppBackButton(),
               ),
             ),
-            const SizedBox(height: 24),
-            const _PlaceholderSection(
-              judul: 'Foto kerusakan',
-              keterangan: 'Langkah 6',
-            ),
-            const _PlaceholderSection(
-              judul: 'Deskripsi kerusakan',
-              keterangan: 'Langkah 5',
-            ),
-            const _PlaceholderSection(
-              judul: 'Saran kategori dari AI',
-              keterangan: 'Langkah 7',
-            ),
-            const SizedBox(height: 8),
-            // TODO(langkah 8): ganti dengan LoadingButton "Kirim laporan".
-            FilledButton(
-              onPressed: _kirimContoh,
-              child: const Text('Kirim (contoh, sementara)'),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text('Lokasi', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.meeting_room_outlined,
+                        color: theme.colorScheme.primary,
+                      ),
+                      title: Text(location.namaRuangan),
+                      subtitle: Text(
+                        '${location.namaGedung} · ${location.kodeRuangan} · '
+                        'Lantai ${location.lantai}',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const _PlaceholderSection(
+                    judul: 'Foto kerusakan',
+                    keterangan: 'Langkah 6',
+                  ),
+                  const _PlaceholderSection(
+                    judul: 'Deskripsi kerusakan',
+                    keterangan: 'Langkah 5',
+                  ),
+                  const _PlaceholderSection(
+                    judul: 'Saran kategori dari AI',
+                    keterangan: 'Langkah 7',
+                  ),
+                  const SizedBox(height: 8),
+                  // TODO(langkah 8): ganti dengan LoadingButton "Kirim laporan".
+                  FilledButton(
+                    onPressed: _kirimContoh,
+                    child: const Text('Kirim (contoh, sementara)'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
