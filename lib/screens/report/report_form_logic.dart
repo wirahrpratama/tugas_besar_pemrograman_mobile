@@ -1,6 +1,10 @@
 /// Logika murni form laporan, dipisah dari widget agar mudah diuji unit.
 library;
 
+import 'dart:async' show TimeoutException;
+import 'dart:io' show SocketException;
+
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:image_picker/image_picker.dart';
 
 import '../../models/report_models.dart';
@@ -94,4 +98,47 @@ String? prioritasUntukDikirim(
   final ai = prioritasUntukDikirim(saran, kategori.id);
   if (ai != null) return (prioritas: ai.toLowerCase(), dariAi: true);
   return (prioritas: kategori.prioritasDefault, dariAi: false);
+}
+
+/// Pesan ramah untuk kegagalan saat menekan "Kirim laporan".
+///
+/// [saatUpload] true bila gagal di `PhotoStore.uploadPhoto`, false bila di
+/// `ReportService.submitReport`. Menerima `Object` (bukan `Exception`) karena
+/// `uploadPhoto` juga melempar `StateError`/`ArgumentError`, yang di Dart
+/// termasuk *Error*, bukan *Exception*.
+String pesanGagalKirim(Object error, {required bool saatUpload}) {
+  const koneksi =
+      'Tidak dapat terhubung ke server. Periksa koneksi internet lalu coba '
+      'lagi.';
+  const sesi = 'Sesi masuk berakhir. Silakan masuk lagi.';
+
+  if (error is TimeoutException || error is SocketException) return koneksi;
+  if (error is FirebaseException) {
+    switch (error.code) {
+      case 'unavailable' || 'network-request-failed' || 'deadline-exceeded':
+        return koneksi;
+      case 'permission-denied':
+        return 'Akses ditolak server. Coba keluar lalu masuk lagi.';
+      case 'unauthenticated':
+        return sesi;
+    }
+  }
+
+  // Pesan service tim berawalan kode, mis. "Exception: 403 Forbidden: ...".
+  final teks = error
+      .toString()
+      .replaceFirst(
+        RegExp(r'^(Exception|Bad state|Invalid argument\(s\)): '),
+        '',
+      )
+      .trim();
+  if (teks.startsWith('401')) return sesi;
+  // Kontrak tim: pesan 403/422 dari service boleh ditampilkan apa adanya.
+  if (teks.startsWith('403') || teks.startsWith('422')) return teks;
+  if (saatUpload && (error is StateError || error is ArgumentError)) {
+    return 'Foto tidak bisa diproses. Ambil ulang foto lalu coba lagi.';
+  }
+  return saatUpload
+      ? 'Gagal mengunggah foto. Coba lagi.'
+      : 'Gagal mengirim laporan. Coba lagi.';
 }

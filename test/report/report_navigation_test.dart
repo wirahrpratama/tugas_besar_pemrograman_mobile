@@ -7,11 +7,15 @@ import 'package:sifasilitas/models/report_models.dart';
 import 'package:sifasilitas/screens/home/pelapor_home.dart';
 import 'package:sifasilitas/screens/report/report_submitted_screen.dart';
 import 'package:sifasilitas/services/ai_classifier_service.dart';
+import 'package:sifasilitas/services/photo_store.dart';
 import 'package:sifasilitas/services/report_repository.dart';
+import 'package:sifasilitas/services/report_service.dart';
 
 import 'fake_ai_classifier.dart';
 import 'fake_image_picker.dart';
+import 'fake_photo_store.dart';
 import 'fake_report_repository.dart';
+import 'fake_report_service.dart';
 import 'fake_scanner_platform.dart';
 
 const _user = AppUser(
@@ -56,6 +60,8 @@ void main() {
               ],
           ),
           Provider<AiClassifierService>.value(value: FakeAiClassifier()),
+          Provider<PhotoStore>.value(value: FakePhotoStore()),
+          Provider<ReportService>.value(value: FakeReportService()),
           Provider<ImagePicker>.value(
             value: FakeImagePicker()..hasil = XFile('/tmp/sifasilitas_uji.jpg'),
           ),
@@ -106,10 +112,10 @@ void main() {
     // "Selesai" di keyboard: saran AI mengisi kategori.
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Kirim (contoh, sementara)'));
-    await tester.tap(find.text('Kirim (contoh, sementara)'));
+    await tester.ensureVisible(find.text('Kirim laporan'));
+    await tester.tap(find.text('Kirim laporan'));
     await tester.pumpAndSettle();
-    expect(find.text('CONTOH-0001'), findsOneWidget);
+    expect(find.text('SF-UJI-0001'), findsOneWidget);
 
     // Simulasi tombol back sistem.
     final popped = await tester.binding.handlePopRoute();

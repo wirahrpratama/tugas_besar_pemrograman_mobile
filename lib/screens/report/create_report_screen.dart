@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,18 +8,20 @@ import 'package:provider/provider.dart';
 
 import '../../models/report_models.dart';
 import '../../services/ai_classifier_service.dart';
+import '../../services/photo_store.dart';
 import '../../services/report_repository.dart';
+import '../../services/report_service.dart';
 import '../../theme/app_spacing.dart';
-import '../../widgets/app_button.dart';
 import '../../widgets/app_top_bar.dart';
+import '../../widgets/loading_button.dart';
 import 'category_section.dart';
 import 'photo_picker_field.dart';
 import 'report_form_logic.dart';
 import 'report_section_header.dart';
 import 'report_submitted_screen.dart';
 
-/// Layar form laporan: lokasi, foto, deskripsi, kategori + saran AI, lalu
-/// kirim (langkah 8).
+/// Layar form laporan: lokasi, foto, deskripsi, fasilitas + saran AI, lalu
+/// kirim (upload foto → `submitReport`).
 class CreateReportScreen extends StatefulWidget {
   const CreateReportScreen({
     super.key,
@@ -49,8 +52,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   /// memasang picker palsu (lihat test/report/fake_image_picker.dart).
   late final ImagePicker _picker;
 
-  /// Foto terpilih. `XFile` hanya berlaku selama sesi app; langkah 8
-  /// mengunggahnya lewat `PhotoStore.uploadPhoto(File(_foto!.path))`.
+  /// Foto terpilih. `XFile` hanya berlaku selama sesi app; diunggah saat
+  /// kirim lewat `PhotoStore.uploadPhoto(File(_foto!.path))`.
   XFile? _foto;
 
   /// True selama kamera/galeri terbuka; mencegah picker dibuka dua kali.
@@ -59,6 +62,25 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   /// Kunci ke FormField foto, untuk memberi tahu Form bahwa nilainya berubah
   /// (didChange) sehingga error foto ikut diperbarui seperti field teks.
   final _fotoFieldKey = GlobalKey<FormFieldState<XFile>>();
+
+  // --- Kirim (langkah 8) ---
+
+  /// Batas tunggu upload dan submit. Penting: saat offline, `set()` Firestore
+  /// tidak gagal melainkan menunggu sampai online, jadi tanpa batas ini
+  /// tombol bisa loading selamanya.
+  static const _batasWaktu = Duration(seconds: 30);
+
+  /// Submission state (slide 13): idle (false) / loading (true). Sukses =
+  /// pindah layar; gagal = kembali false + SnackBar.
+  bool _mengirim = false;
+
+  /// Teks tahap di bawah tombol: "Mengunggah foto…" / "Mengirim laporan…".
+  String? _tahapKirim;
+
+  /// Referensi `"photo:{id}"` hasil upload yang berhasil. Bila hanya
+  /// `submitReport` yang gagal, percobaan berikutnya memakai ref ini (tidak
+  /// upload ulang). Dikosongkan saat pelapor mengganti foto.
+  String? _fotoRef;
 
   // --- Deskripsi & saran AI (langkah 7) ---
 
@@ -225,7 +247,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     // hasil null = pengguna membatalkan: foto lama tetap dipakai.
     setState(() {
       _sedangMemilihFoto = false;
-      if (hasil != null) _foto = hasil;
+      if (hasil != null) {
+        _foto = hasil;
+        _fotoRef = null; // foto baru harus diunggah ulang
+      }
     });
     if (hasil != null) _fotoFieldKey.currentState?.didChange(hasil);
     if (pesanError != null) {
@@ -235,42 +260,96 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  void _kirim() {
+  Future<void> _kirim() async {
+    if (_mengirim) return; // cegah submit ganda (slide 26)
     // Tutup keyboard supaya pesan error dan tombol tidak tertutup.
     FocusScope.of(context).unfocus();
     final kategori = _kategoriTerpilih;
-    if (!_formKey.currentState!.validate() || kategori == null) {
+    final foto = _foto;
+    if (!_formKey.currentState!.validate() ||
+        kategori == null ||
+        foto == null) {
       setState(() => _autovalidateMode = AutovalidateMode.onUserInteraction);
       return;
     }
-    // TODO(langkah 8): submitReport(category: kategori, aiSuggestedPriority:
-    // prioritasUntukDikirim(_saran, kategori.id), ...).
-    _kirimContoh();
-  }
 
-  // TODO(langkah 8): hapus; hasil asli dari ReportService.submitReport.
-  void _kirimContoh() {
-    // pushReplacement: form dikeluarkan dari tumpukan, jadi back dari layar
-    // hasil tidak kembali ke form yang sudah terkirim.
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => ReportSubmittedScreen(
-          userUid: widget.user.uid,
-          userName: widget.user.nama,
-          result: const {
-            'merged': false,
-            'ticket_number': 'CONTOH-0001',
-            'message': 'Data contoh, belum dikirim ke server.',
-          },
+    // Ambil semua yang butuh context SEBELUM await pertama.
+    final photoStore = context.read<PhotoStore>();
+    final reportService = context.read<ReportService>();
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    setState(() {
+      _mengirim = true;
+      _tahapKirim = 'Mengunggah foto…';
+    });
+
+    var saatUpload = true;
+    try {
+      var ref = _fotoRef;
+      if (ref == null) {
+        // Kompresi otomatis di dalam uploadPhoto; layar tidak mengompres.
+        ref = await photoStore
+            .uploadPhoto(File(foto.path))
+            .timeout(_batasWaktu);
+        _fotoRef = ref;
+      }
+      saatUpload = false;
+      if (!mounted) return;
+      setState(() => _tahapKirim = 'Mengirim laporan…');
+
+      final hasil = await reportService
+          .submitReport(
+            reporter: widget.user,
+            location: widget.location,
+            category: kategori,
+            deskripsi: _deskripsi.text.trim(),
+            fotoSebelumUrl: ref,
+            aiSuggestedPriority: prioritasUntukDikirim(_saran, kategori.id),
+          )
+          .timeout(_batasWaktu);
+      if (!mounted) return;
+
+      // pushReplacement: form dikeluarkan dari tumpukan, jadi back dari layar
+      // hasil tidak kembali ke form yang sudah terkirim.
+      unawaited(
+        navigator.pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => ReportSubmittedScreen(
+              userUid: widget.user.uid,
+              userName: widget.user.nama,
+              result: hasil,
+            ),
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      // Sengaja menangkap semua (bukan hanya Exception): uploadPhoto juga
+      // melempar StateError/ArgumentError. Detail teknis tidak ditampilkan.
+      if (!mounted) return;
+      setState(() {
+        _mengirim = false;
+        _tahapKirim = null;
+      });
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(pesanGagalKirim(e, saatUpload: saatUpload)),
+            // SnackBar muncul di bawah dan menutupi tombol Kirim selama
+            // beberapa detik, jadi aksi coba lagi disediakan di sini.
+            action: SnackBarAction(label: 'Coba lagi', onPressed: _kirim),
+          ),
+        );
+    }
   }
 
   /// Dipanggil [PopScope] setiap kali layar akan ditutup: tombol back
   /// sistem, [AppBackButton], atau tombol "Ubah" lokasi.
   Future<void> _onPop(bool didPop, Object? result) async {
-    if (didPop) return;
+    // Selama mengirim, back diabaikan: bila layar ditutup, laporan tetap
+    // terkirim di belakang tanpa pelapor melihat hasilnya.
+    if (didPop || _mengirim) return;
     final keluar = !_adaIsian || await _konfirmasiBuang();
     if (!keluar || !mounted) return;
     // pop() langsung, bukan maybePop(), supaya tidak memicu PopScope lagi.
@@ -340,89 +419,114 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                   child: Form(
                     key: _formKey,
                     autovalidateMode: _autovalidateMode,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const ReportSectionHeader(
-                          icon: Icons.place_outlined,
-                          title: 'Lokasi',
-                        ),
-                        _LocationCard(
-                          location: widget.location,
-                          // maybePop agar tetap lewat konfirmasi di _onPop.
-                          onChange: () => Navigator.of(context).maybePop(),
-                        ),
-                        const SizedBox(height: AppSpacing.xl),
-                        const ReportSectionHeader(
-                          icon: Icons.photo_camera_outlined,
-                          title: 'Foto kerusakan',
-                        ),
-                        // FormField agar foto ikut validate() dan
-                        // AutovalidateMode yang sama dengan deskripsi.
-                        // Nilai sebenarnya tetap _foto di State.
-                        FormField<XFile>(
-                          key: _fotoFieldKey,
-                          validator: (_) => validasiFoto(_foto),
-                          builder: (field) => PhotoPickerField(
-                            foto: _foto,
-                            busy: _sedangMemilihFoto,
-                            errorText: field.errorText,
-                            onPick: _pilihFoto,
+                    // Selama mengirim, seluruh form dikunci dari sentuhan.
+                    // Bukan dengan menonaktifkan tiap field: dropdown yang
+                    // nonaktif menyembunyikan nilainya (menampilkan
+                    // disabledHint), padahal pelapor perlu tetap melihatnya.
+                    child: AbsorbPointer(
+                      absorbing: _mengirim,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const ReportSectionHeader(
+                            icon: Icons.place_outlined,
+                            title: 'Lokasi',
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.xl),
-                        const ReportSectionHeader(
-                          icon: Icons.notes_outlined,
-                          title: 'Deskripsi kerusakan',
-                        ),
-                        TextFormField(
-                          key: _deskripsiFieldKey,
-                          controller: _deskripsi,
-                          focusNode: _deskripsiFocus,
-                          validator: validasiDeskripsi,
-                          keyboardType: TextInputType.multiline,
-                          textInputAction: TextInputAction.done,
-                          textCapitalization: TextCapitalization.sentences,
-                          minLines: 3,
-                          maxLines: 5,
-                          maxLength: deskripsiMaksimal,
-                          decoration: const InputDecoration(
-                            labelText: 'Deskripsi',
-                            alignLabelWithHint: true,
-                            hintText:
-                                'Contoh: Proyektor tidak menyala sejak '
-                                'Senin pagi.',
-                            helperText:
-                                'Jelaskan apa yang rusak dan sejak kapan.',
-                            helperMaxLines: 2,
-                            errorMaxLines: 2,
+                          _LocationCard(
+                            location: widget.location,
+                            // maybePop agar tetap lewat konfirmasi di _onPop.
+                            onChange: () => Navigator.of(context).maybePop(),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.xl),
-                        const ReportSectionHeader(
-                          icon: Icons.category_outlined,
-                          title: 'Fasilitas & prioritas',
-                        ),
-                        CategorySection(
-                          fieldKey: _kategoriFieldKey,
-                          kategoriList: _kategoriList,
-                          gagalMemuatKategori: _gagalMemuatKategori,
-                          onMuatUlangKategori: _muatUlangKategori,
-                          kategoriId: _kategoriTerpilih?.id,
-                          onKategoriChanged: _onKategoriChanged,
-                          saran: _saran,
-                          memintaSaran: _memintaSaran,
-                          pesanSaranGagal: _pesanSaranGagal,
-                          onMintaSaran: _tekanMintaSaran,
-                        ),
-                        const SizedBox(height: AppSpacing.xl),
-                        // TODO(langkah 8): ganti dengan LoadingButton
-                        // "Kirim laporan" yang memanggil submitReport.
-                        AppButton(
-                          label: 'Kirim (contoh, sementara)',
-                          onPressed: _kirim,
-                        ),
-                      ],
+                          const SizedBox(height: AppSpacing.xl),
+                          const ReportSectionHeader(
+                            icon: Icons.photo_camera_outlined,
+                            title: 'Foto kerusakan',
+                          ),
+                          // FormField agar foto ikut validate() dan
+                          // AutovalidateMode yang sama dengan deskripsi.
+                          // Nilai sebenarnya tetap _foto di State.
+                          FormField<XFile>(
+                            key: _fotoFieldKey,
+                            validator: (_) => validasiFoto(_foto),
+                            builder: (field) => PhotoPickerField(
+                              foto: _foto,
+                              busy: _sedangMemilihFoto,
+                              errorText: field.errorText,
+                              onPick: _pilihFoto,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          const ReportSectionHeader(
+                            icon: Icons.notes_outlined,
+                            title: 'Deskripsi kerusakan',
+                          ),
+                          TextFormField(
+                            key: _deskripsiFieldKey,
+                            controller: _deskripsi,
+                            focusNode: _deskripsiFocus,
+                            readOnly: _mengirim,
+                            validator: validasiDeskripsi,
+                            keyboardType: TextInputType.multiline,
+                            textInputAction: TextInputAction.done,
+                            textCapitalization: TextCapitalization.sentences,
+                            minLines: 3,
+                            maxLines: 5,
+                            maxLength: deskripsiMaksimal,
+                            decoration: const InputDecoration(
+                              labelText: 'Deskripsi',
+                              alignLabelWithHint: true,
+                              hintText:
+                                  'Contoh: Proyektor tidak menyala sejak '
+                                  'Senin pagi.',
+                              helperText:
+                                  'Jelaskan apa yang rusak dan sejak kapan.',
+                              helperMaxLines: 2,
+                              errorMaxLines: 2,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          const ReportSectionHeader(
+                            icon: Icons.category_outlined,
+                            title: 'Fasilitas & prioritas',
+                          ),
+                          CategorySection(
+                            fieldKey: _kategoriFieldKey,
+                            kategoriList: _kategoriList,
+                            gagalMemuatKategori: _gagalMemuatKategori,
+                            onMuatUlangKategori: _muatUlangKategori,
+                            kategoriId: _kategoriTerpilih?.id,
+                            onKategoriChanged: _onKategoriChanged,
+                            saran: _saran,
+                            memintaSaran: _memintaSaran,
+                            pesanSaranGagal: _pesanSaranGagal,
+                            onMintaSaran: _tekanMintaSaran,
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          // LoadingButton = AppButton tim + spinner; saat
+                          // loading tombol nonaktif (cegah submit ganda).
+                          LoadingButton(
+                            label: 'Kirim laporan',
+                            loading: _mengirim,
+                            onPressed: _kirim,
+                          ),
+                          if (_tahapKirim case final tahap?)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                top: AppSpacing.sm,
+                              ),
+                              child: Text(
+                                tahap,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

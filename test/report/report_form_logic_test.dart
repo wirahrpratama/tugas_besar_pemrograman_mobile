@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sifasilitas/models/report_models.dart';
@@ -136,6 +139,75 @@ void main() {
       expect(labelPrioritas(' TINGGI '), 'Tinggi');
       expect(labelPrioritas(''), '-');
       expect(labelPrioritas('urgent'), 'urgent');
+    });
+  });
+
+  group('pesanGagalKirim', () {
+    const koneksi =
+        'Tidak dapat terhubung ke server. Periksa koneksi internet lalu coba '
+        'lagi.';
+
+    FirebaseException fb(String code) =>
+        FirebaseException(plugin: 'cloud_firestore', code: code);
+
+    test('timeout dan jaringan = pesan koneksi', () {
+      expect(pesanGagalKirim(TimeoutException('x'), saatUpload: true), koneksi);
+      expect(pesanGagalKirim(fb('unavailable'), saatUpload: false), koneksi);
+      expect(
+        pesanGagalKirim(fb('network-request-failed'), saatUpload: true),
+        koneksi,
+      );
+    });
+
+    test('permission-denied dan sesi', () {
+      expect(
+        pesanGagalKirim(fb('permission-denied'), saatUpload: false),
+        'Akses ditolak server. Coba keluar lalu masuk lagi.',
+      );
+      expect(
+        pesanGagalKirim(
+          StateError('401 Unauthorized: Pengguna harus login.'),
+          saatUpload: true,
+        ),
+        'Sesi masuk berakhir. Silakan masuk lagi.',
+      );
+    });
+
+    test('403/422 dari service apa adanya tanpa awalan Exception', () {
+      expect(
+        pesanGagalKirim(
+          Exception('422 Validasi Gagal: Deskripsi kosong.'),
+          saatUpload: false,
+        ),
+        '422 Validasi Gagal: Deskripsi kosong.',
+      );
+    });
+
+    test('foto tidak bisa diproses saat upload', () {
+      const pesan =
+          'Foto tidak bisa diproses. Ambil ulang foto lalu coba lagi.';
+      expect(
+        pesanGagalKirim(StateError('Gagal mengompres'), saatUpload: true),
+        pesan,
+      );
+      expect(
+        pesanGagalKirim(
+          ArgumentError('File tidak ditemukan'),
+          saatUpload: true,
+        ),
+        pesan,
+      );
+    });
+
+    test('lainnya: pesan umum sesuai tahap', () {
+      expect(
+        pesanGagalKirim(Exception('aneh'), saatUpload: true),
+        'Gagal mengunggah foto. Coba lagi.',
+      );
+      expect(
+        pesanGagalKirim(Exception('aneh'), saatUpload: false),
+        'Gagal mengirim laporan. Coba lagi.',
+      );
     });
   });
 }

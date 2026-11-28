@@ -8,11 +8,17 @@ import 'package:provider/provider.dart';
 import 'package:sifasilitas/models/report_models.dart';
 import 'package:sifasilitas/screens/report/create_report_screen.dart';
 import 'package:sifasilitas/screens/report/report_submitted_screen.dart';
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:sifasilitas/services/ai_classifier_service.dart';
+import 'package:sifasilitas/services/photo_store.dart';
+import 'package:sifasilitas/services/report_service.dart';
+import 'package:sifasilitas/widgets/loading_button.dart';
 import 'package:sifasilitas/services/report_repository.dart';
 
 import 'fake_ai_classifier.dart';
 import 'fake_image_picker.dart';
+import 'fake_photo_store.dart';
+import 'fake_report_service.dart';
 import 'fake_report_repository.dart';
 
 const _user = AppUser(
@@ -32,7 +38,7 @@ const _gda201 = CampusLocation(
   lantai: 2,
 );
 
-const _kirim = 'Kirim (contoh, sementara)';
+const _kirim = 'Kirim laporan';
 const _wajib = 'Deskripsi kerusakan wajib diisi.';
 const _valid = 'Proyektor tidak menyala sejak Senin pagi.';
 const _fotoWajib = 'Foto kerusakan wajib dilampirkan.';
@@ -61,6 +67,8 @@ void main() {
   late FakeImagePicker picker;
   late FakeReportRepository repo;
   late FakeAiClassifier ai;
+  late FakePhotoStore photos;
+  late FakeReportService service;
 
   setUp(() {
     // Path tidak harus ada: pratinjau gagal dimuat ditangani errorBuilder.
@@ -68,6 +76,8 @@ void main() {
     repo = FakeReportRepository()
       ..categories = const [_lampu, _proyektor, _toilet];
     ai = FakeAiClassifier();
+    photos = FakePhotoStore();
+    service = FakeReportService();
   });
 
   /// Form dibuka dari halaman awal ("pemindai" palsu), supaya pop bisa diuji.
@@ -78,6 +88,8 @@ void main() {
           Provider<ImagePicker>.value(value: picker),
           Provider<ReportRepository>.value(value: repo),
           Provider<AiClassifierService>.value(value: ai),
+          Provider<PhotoStore>.value(value: photos),
+          Provider<ReportService>.value(value: service),
         ],
         child: MaterialApp(
           home: Builder(
@@ -601,6 +613,191 @@ void main() {
       expect(
         dropdown.style?.fontWeight,
         Theme.of(context).textTheme.bodyLarge?.fontWeight,
+      );
+    });
+  });
+
+  group('kirim laporan', () {
+    const koneksi =
+        'Tidak dapat terhubung ke server. Periksa koneksi internet lalu coba '
+        'lagi.';
+
+    /// Aksi "Coba lagi" di SnackBar error.
+
+    Future<void> cobaLagi(WidgetTester tester) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(SnackBar),
+          matching: find.text('Coba lagi'),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> isiLengkap(WidgetTester tester, {String teks = _valid}) async {
+      await tapTombol(tester, 'Ambil foto');
+      await tester.enterText(deskripsi(), teks);
+      await selesaiMengetik(tester);
+    }
+
+    testWidgets('sukses: upload, submitReport dengan argumen benar, hasil', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+      await isiLengkap(tester, teks: '  $_valid  ');
+
+      await tapKirim(tester);
+
+      expect(photos.uploads, ['/tmp/sifasilitas_uji.jpg']);
+      final call = service.calls.single;
+      expect(call.reporter.uid, 'u1');
+      expect(call.location.id, 'loc_gda_201');
+      expect(call.category.id, 'cat_proyektor');
+      expect(call.deskripsi, _valid); // sudah di-trim
+      expect(call.fotoSebelumUrl, 'photo:uji1');
+      expect(call.aiSuggestedPriority, 'tinggi');
+      expect(find.byType(ReportSubmittedScreen), findsOneWidget);
+      expect(find.text('SF-UJI-0001'), findsOneWidget);
+    });
+
+    testWidgets('fasilitas diganti: aiSuggestedPriority null', (tester) async {
+      await pumpForm(tester);
+      await isiLengkap(tester);
+      await pilihKategori(tester, 'Toilet');
+
+      await tapKirim(tester);
+
+      expect(service.calls.single.category.id, 'cat_toilet');
+      expect(service.calls.single.aiSuggestedPriority, isNull);
+    });
+
+    testWidgets(
+      'selama mengirim: loading, tahap, tanpa dobel, back diabaikan',
+      (tester) async {
+        final upload = Completer<String>();
+        photos.pending = upload;
+        await pumpForm(tester);
+        await isiLengkap(tester);
+
+        await tester.ensureVisible(find.text(_kirim));
+        await tester.tap(find.text(_kirim));
+        await tester.pump();
+        expect(find.text('Mengunggah foto…'), findsOneWidget);
+        expect(
+          tester.widget<LoadingButton>(find.byType(LoadingButton)).loading,
+          isTrue,
+        );
+
+        // Tekan lagi + tombol back sistem: tidak berpengaruh.
+        await tester.tap(find.byType(LoadingButton), warnIfMissed: false);
+        await tester.binding.handlePopRoute();
+        await tester.pump();
+        expect(photos.uploads, hasLength(1));
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(find.byType(CreateReportScreen), findsOneWidget);
+
+        upload.complete('photo:uji1');
+        await tester.pumpAndSettle();
+        expect(service.calls, hasLength(1));
+        expect(find.byType(ReportSubmittedScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets('upload gagal: pesan koneksi, form utuh, bisa coba lagi', (
+      tester,
+    ) async {
+      photos.error = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'unavailable',
+      );
+      await pumpForm(tester);
+      await isiLengkap(tester);
+
+      await tapKirim(tester);
+      expect(find.text(koneksi), findsOneWidget);
+      expect(find.text(_valid), findsOneWidget);
+      expect(pratinjau(), findsOneWidget);
+      expect(service.calls, isEmpty);
+
+      photos.error = null;
+      await cobaLagi(tester);
+      expect(photos.uploads, hasLength(2));
+      expect(find.byType(ReportSubmittedScreen), findsOneWidget);
+    });
+
+    testWidgets('submit gagal: coba lagi tanpa upload ulang', (tester) async {
+      service.error = Exception('transaksi gagal');
+      await pumpForm(tester);
+      await isiLengkap(tester);
+
+      await tapKirim(tester);
+      expect(find.text('Gagal mengirim laporan. Coba lagi.'), findsOneWidget);
+      expect(find.textContaining('transaksi gagal'), findsNothing);
+
+      service.error = null;
+      await cobaLagi(tester);
+      expect(photos.uploads, hasLength(1));
+      expect(service.calls, hasLength(2));
+      expect(service.calls.last.fotoSebelumUrl, 'photo:uji1');
+    });
+
+    testWidgets('ganti foto setelah gagal: foto baru diunggah', (tester) async {
+      service.error = Exception('transaksi gagal');
+      await pumpForm(tester);
+      await isiLengkap(tester);
+      await tapKirim(tester);
+
+      // Tutup SnackBar dulu (menutupi tombol bawah), lalu ganti foto.
+
+      ScaffoldMessenger.of(
+        tester.element(find.byType(CreateReportScreen)),
+      ).hideCurrentSnackBar();
+
+      await tester.pumpAndSettle();
+
+      picker.hasil = XFile('/tmp/sifasilitas_baru.jpg');
+      await tapTombol(tester, 'Ambil ulang');
+      service.error = null;
+      photos.ref = 'photo:uji2';
+      await tapKirim(tester);
+
+      expect(photos.uploads, [
+        '/tmp/sifasilitas_uji.jpg',
+        '/tmp/sifasilitas_baru.jpg',
+      ]);
+      expect(service.calls.last.fotoSebelumUrl, 'photo:uji2');
+    });
+
+    testWidgets('pesan 403 dari service tampil apa adanya', (tester) async {
+      service.error = Exception('403 Forbidden: Akun pelapor tidak aktif.');
+      await pumpForm(tester);
+      await isiLengkap(tester);
+
+      await tapKirim(tester);
+
+      expect(
+        find.text('403 Forbidden: Akun pelapor tidak aktif.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('upload menggantung (offline): berhenti setelah 30 detik', (
+      tester,
+    ) async {
+      photos.pending = Completer<String>(); // tidak pernah selesai
+      await pumpForm(tester);
+      await isiLengkap(tester);
+
+      await tester.ensureVisible(find.text(_kirim));
+      await tester.tap(find.text(_kirim));
+      await tester.pump(const Duration(seconds: 31));
+      await tester.pump();
+
+      expect(find.text(koneksi), findsOneWidget);
+      expect(
+        tester.widget<LoadingButton>(find.byType(LoadingButton)).loading,
+        isFalse,
       );
     });
   });
