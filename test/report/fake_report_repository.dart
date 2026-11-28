@@ -11,9 +11,25 @@ import 'package:sifasilitas/services/report_repository.dart';
 /// Pasang lewat `Provider<ReportRepository>.value(value: fake, ...)`.
 class FakeReportRepository implements ReportRepository {
   FakeReportRepository({List<CampusLocation> locations = const []})
-    : _byKode = {for (final l in locations) l.kodeRuangan: l};
+    : _locations = locations,
+      _byKode = {for (final l in locations) l.kodeRuangan: l};
 
+  final List<CampusLocation> _locations;
   final Map<String, CampusLocation> _byKode;
+
+  /// Bila diisi, `watchLocations` mengembalikan stream ini (mis. stream yang
+  /// tidak pernah memancarkan data untuk menguji loading, atau stream error).
+  /// Bila null, langsung memancarkan daftar lokasi dari konstruktor.
+  Stream<List<CampusLocation>>? locationsStream;
+
+  /// Jumlah panggilan `watchLocations` (untuk menguji tombol Coba lagi).
+  int watchLocationsCalls = 0;
+
+  @override
+  Stream<List<CampusLocation>> watchLocations() {
+    watchLocationsCalls++;
+    return locationsStream ?? Stream.value(_locations);
+  }
 
   /// Bila diisi, `getLocationByQr` melempar exception ini (mis. jaringan).
   Exception? error;

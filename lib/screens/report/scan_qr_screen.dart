@@ -9,12 +9,15 @@ import '../../services/report_repository.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/app_top_bar.dart';
 import 'create_report_screen.dart';
+import 'select_location_screen.dart';
 
 /// Layar pindai QR ruangan.
 ///
 /// Kamera + bingkai bidik + senter + penanganan izin kamera. Isi QR dicocokkan
 /// ke master `locations` lewat [ReportRepository.getLocationByQr]; bila cocok,
-/// panel ruangan tampil dengan tombol "Lanjut buat laporan".
+/// panel ruangan tampil dengan tombol "Lanjut buat laporan". Bila QR tidak
+/// terbaca atau kamera tidak bisa dipakai, pengguna bisa memilih ruangan
+/// manual lewat [SelectLocationScreen].
 class ScanQrScreen extends StatefulWidget {
   const ScanQrScreen({super.key, required this.user});
 
@@ -178,6 +181,30 @@ class _ScanQrScreenState extends State<ScanQrScreen>
     await _startCamera();
   }
 
+  Future<void> _pilihManual() async {
+    // Sama seperti membuka form: kamera dimatikan selama layar lain di atas.
+    _isCoveredByOtherRoute = true;
+    await _controller.stop();
+    if (!mounted) return;
+
+    final location = await Navigator.of(context).push<CampusLocation>(
+      MaterialPageRoute(
+        builder: (_) => SelectLocationScreen(user: widget.user),
+      ),
+    );
+    if (!mounted) return;
+
+    if (location != null) {
+      // Ruangan dipilih: lanjut ke form lewat jalur yang sama dengan QR,
+      // jadi kembali dari form juga mendarat di pemindai.
+      await _bukaFormLaporan(location);
+      return;
+    }
+    // Kembali tanpa memilih: lanjut memindai.
+    _isCoveredByOtherRoute = false;
+    await _startCamera();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -264,10 +291,14 @@ class _ScanQrScreenState extends State<ScanQrScreen>
     final message = switch (error.errorCode) {
       MobileScannerErrorCode.permissionDenied =>
         'Izin kamera ditolak. Izinkan kamera di Pengaturan > Aplikasi > '
-            'SiFasilitas > Izin, lalu tekan "Coba lagi".',
+            'SiFasilitas > Izin, lalu tekan "Coba lagi", atau pilih '
+            'ruangan manual di bawah.',
       MobileScannerErrorCode.unsupported =>
-        'Perangkat ini tidak memiliki kamera yang bisa dipakai untuk memindai.',
-      _ => 'Kamera tidak dapat dibuka. Silakan coba lagi.',
+        'Perangkat ini tidak memiliki kamera yang bisa dipakai untuk '
+            'memindai. Pilih ruangan manual di bawah.',
+      _ =>
+        'Kamera tidak dapat dibuka. Silakan coba lagi, atau pilih ruangan '
+            'manual di bawah.',
     };
     return ColoredBox(
       color: colorScheme.surfaceContainerHighest,
@@ -302,22 +333,37 @@ class _ScanQrScreenState extends State<ScanQrScreen>
   }
 
   Widget _buildHint() {
-    if (_isProcessing) {
-      return const Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SizedBox.square(
-            dimension: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          SizedBox(width: 12),
-          Text('Memeriksa QR…'),
-        ],
-      );
-    }
-    return const Text(
-      'Arahkan kamera ke QR Code di pintu ruangan atau stiker aset.',
-      textAlign: TextAlign.center,
+    final status = _isProcessing
+        ? const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text('Memeriksa QR…'),
+            ],
+          )
+        : const Text(
+            'Arahkan kamera ke QR Code di pintu ruangan atau stiker aset.',
+            textAlign: TextAlign.center,
+          );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        status,
+        const SizedBox(height: AppSpacing.sm),
+        // Selalu tampil (juga saat kamera error/izin ditolak) agar pelapor
+        // tetap bisa melapor tanpa kamera. Nonaktif selama QR diperiksa.
+        TextButton.icon(
+          style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+          onPressed: _isProcessing ? null : _pilihManual,
+          icon: const Icon(Icons.list_alt_outlined),
+          label: const Text('QR tidak terbaca? Pilih ruangan manual'),
+        ),
+      ],
     );
   }
 }
