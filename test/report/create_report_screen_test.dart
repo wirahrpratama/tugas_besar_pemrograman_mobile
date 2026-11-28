@@ -154,7 +154,10 @@ void main() {
     expect(find.text('Ruang Kelas 201'), findsOneWidget);
     expect(find.text('Gedung A · QR-GDA-201 · Lantai 2'), findsOneWidget);
     expect(
-      find.text('Jelaskan apa yang rusak dan sejak kapan.'),
+      find.text(
+        'Jelaskan apa yang rusak dan sejak kapan. Jangan tulis data pribadi '
+        '(nama, NIM, nomor HP).',
+      ),
       findsOneWidget,
     );
     expect(find.text('0/500'), findsOneWidget);

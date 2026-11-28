@@ -480,9 +480,13 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                               hintText:
                                   'Contoh: Proyektor tidak menyala sejak '
                                   'Senin pagi.',
+                              // Privasi (checklist slide 26): bila kunci
+                              // Gemini aktif, deskripsi dikirim ke layanan AI.
                               helperText:
-                                  'Jelaskan apa yang rusak dan sejak kapan.',
-                              helperMaxLines: 2,
+                                  'Jelaskan apa yang rusak dan sejak kapan. '
+                                  'Jangan tulis data pribadi (nama, NIM, '
+                                  'nomor HP).',
+                              helperMaxLines: 3,
                               errorMaxLines: 2,
                             ),
                           ),
