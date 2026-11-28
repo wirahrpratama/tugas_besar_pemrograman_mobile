@@ -226,4 +226,19 @@ void main() {
     );
     expect(button.onPressed, isNull);
   });
+
+  testWidgets('HP 360 dp: panel ruangan dan tombol manual tanpa overflow', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpScreen(tester);
+    expect(tester.takeException(), isNull);
+
+    scanner.emitQr('QR-GDA-201');
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Lanjut buat laporan'), findsOneWidget);
+  });
 }

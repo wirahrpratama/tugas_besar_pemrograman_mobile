@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../models/report_models.dart';
 import '../../services/report_repository.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/app_button.dart';
 import '../../widgets/app_top_bar.dart';
 import 'create_report_screen.dart';
 import 'select_location_screen.dart';
@@ -234,7 +235,7 @@ class _ScanQrScreenState extends State<ScanQrScreen>
           SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: AppSpacing.paddingAllXl,
               child: switch (_foundLocation) {
                 final location? => _LocationPanel(
                   location: location,
@@ -313,17 +314,19 @@ class _ScanQrScreenState extends State<ScanQrScreen>
                 size: 48,
                 color: colorScheme.error,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.lg),
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: colorScheme.onSurface),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface),
               ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
+              const SizedBox(height: AppSpacing.lg),
+              AppButton(
+                icon: Icons.refresh,
+                label: 'Coba lagi',
                 onPressed: _startCamera,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Coba lagi'),
               ),
             ],
           ),
@@ -357,6 +360,9 @@ class _ScanQrScreenState extends State<ScanQrScreen>
         const SizedBox(height: AppSpacing.sm),
         // Selalu tampil (juga saat kamera error/izin ditolak) agar pelapor
         // tetap bisa melapor tanpa kamera. Nonaktif selama QR diperiksa.
+        // TextButton biasa, bukan AppButton varian text: varian itu tidak
+        // punya tinggi minimum 48 dp, dan TextButton.icon membungkus label
+        // panjang ini dengan Flexible. Font tetap labelLarge dari tema.
         TextButton.icon(
           style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
           onPressed: _isProcessing ? null : _pilihManual,
@@ -391,13 +397,13 @@ class _LocationPanel extends StatelessWidget {
         Row(
           children: [
             Icon(Icons.meeting_room_outlined, color: colorScheme.primary),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Text(location.namaRuangan, style: textTheme.titleMedium),
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         Text(
           '${location.kodeRuangan} · ${location.namaGedung} · '
           'Lantai ${location.lantai}',
@@ -405,20 +411,14 @@ class _LocationPanel extends StatelessWidget {
             color: colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 16),
-        FilledButton(
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-          onPressed: onContinue,
-          child: const Text('Lanjut buat laporan'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-          ),
+        const SizedBox(height: AppSpacing.lg),
+        AppButton(label: 'Lanjut buat laporan', onPressed: onContinue),
+        const SizedBox(height: AppSpacing.sm),
+        AppButton(
+          variant: AppButtonVariant.outline,
+          icon: Icons.qr_code_scanner,
+          label: 'Pindai lagi',
           onPressed: onScanAgain,
-          icon: const Icon(Icons.qr_code_scanner),
-          label: const Text('Pindai lagi'),
         ),
       ],
     );

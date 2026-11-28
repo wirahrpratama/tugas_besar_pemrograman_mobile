@@ -134,6 +134,27 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets('HP 360 dp tanpa overflow; dropdown bergaya bodyLarge', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpScreen(tester);
+      await pilih(tester, 'Gedung', 'Gedung Laboratorium');
+      await pilih(tester, 'Ruangan', 'Lab Komputer 301 · Lantai 3');
+
+      expect(tester.takeException(), isNull);
+      final dropdown = tester.widget<DropdownButton<String>>(
+        find.byType(DropdownButton<String>).first,
+      );
+      final context = tester.element(find.byType(SelectLocationScreen));
+      expect(
+        dropdown.style?.fontWeight,
+        Theme.of(context).textTheme.bodyLarge?.fontWeight,
+      );
+    });
+
     testWidgets('loading selama data belum datang', (tester) async {
       repo.locationsStream = StreamController<List<CampusLocation>>().stream;
       await pumpScreen(tester, settle: false);

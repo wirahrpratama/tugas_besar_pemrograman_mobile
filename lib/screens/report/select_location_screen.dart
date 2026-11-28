@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/report_models.dart';
 import '../../services/report_repository.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/app_button.dart';
 import '../../widgets/app_top_bar.dart';
 
 /// Nama gedung unik dari [locations], terurut abjad. Nama kosong dilewati
@@ -149,6 +150,11 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
     // tanpa item (assert "exactly one item").
     final gedung = gedungList.contains(_gedung) ? _gedung : null;
     final ruanganList = ruanganDiGedung(locations, gedung);
+    // Bawaan DropdownButton = titleMedium (w600), lebih tebal dari teks input
+    // di form lain; samakan ke bodyLarge.
+    final dropdownStyle = theme.textTheme.bodyLarge?.copyWith(
+      color: theme.colorScheme.onSurface,
+    );
     final terpilih = ruanganList.where((l) => l.id == _ruanganId).firstOrNull;
 
     return SingleChildScrollView(
@@ -171,6 +177,7 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
             DropdownButtonFormField<String>(
               initialValue: gedung,
               isExpanded: true,
+              style: dropdownStyle,
               decoration: const InputDecoration(labelText: 'Gedung'),
               hint: const Text('Pilih gedung'),
               items: [
@@ -189,6 +196,7 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
             DropdownButtonFormField<String>(
               initialValue: terpilih?.id,
               isExpanded: true,
+              style: dropdownStyle,
               decoration: const InputDecoration(labelText: 'Ruangan'),
               hint: const Text('Pilih ruangan di gedung ini'),
               disabledHint: const Text('Pilih gedung dulu'),
@@ -207,12 +215,9 @@ class _SelectLocationScreenState extends State<SelectLocationScreen> {
                   value == null ? 'Pilih ruangan terlebih dahulu.' : null,
             ),
             const SizedBox(height: AppSpacing.xl),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
-              ),
+            AppButton(
+              label: 'Lanjut buat laporan',
               onPressed: () => _lanjut(terpilih),
-              child: const Text('Lanjut buat laporan'),
             ),
           ],
         ),
@@ -250,16 +255,13 @@ class _StatusMessage extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: colorScheme.onSurface),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurface),
             ),
             if (label != null) ...[
               const SizedBox(height: AppSpacing.lg),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
-                onPressed: onAction,
-                icon: const Icon(Icons.refresh),
-                label: Text(label),
-              ),
+              AppButton(icon: Icons.refresh, label: label, onPressed: onAction),
             ],
           ],
         ),
