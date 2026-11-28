@@ -1,6 +1,37 @@
 /// Logika murni form laporan, dipisah dari widget agar mudah diuji unit.
 library;
 
+import 'package:image_picker/image_picker.dart';
+
+/// Validator foto kerusakan: wajib ada.
+String? validasiFoto(XFile? foto) =>
+    foto == null ? 'Foto kerusakan wajib dilampirkan.' : null;
+
+/// Pesan ramah untuk kode error `PlatformException` dari `image_picker`.
+///
+/// Kode diambil dari sumber paket (image_picker_android 0.8.13 dan
+/// image_picker_ios 0.8.13). Mengembalikan `null` bila error tidak perlu
+/// ditampilkan (picker masih terbuka dari tekanan sebelumnya).
+String? pesanGagalAmbilFoto(String code, ImageSource source) {
+  switch (code) {
+    case 'already_active' || 'multiple_request':
+      return null;
+    case 'camera_access_denied' || 'camera_access_restricted':
+      return 'Izin kamera ditolak. Izinkan kamera di Pengaturan > Aplikasi > '
+          'SiFasilitas > Izin, lalu coba lagi.';
+    case 'photo_access_denied' || 'photo_access_restricted':
+      return 'Izin galeri ditolak. Izinkan akses foto di Pengaturan, '
+          'lalu coba lagi.';
+    case 'no_available_camera':
+      return 'Kamera tidak tersedia. Pilih foto dari galeri.';
+    case 'invalid_image' || 'no_valid_image_uri':
+      return 'File yang dipilih bukan foto yang bisa dibaca. Pilih foto lain.';
+  }
+  return source == ImageSource.camera
+      ? 'Gagal membuka kamera. Silakan coba lagi.'
+      : 'Gagal membuka galeri. Silakan coba lagi.';
+}
+
 /// Panjang minimal deskripsi (contoh dosen, pertemuan 09 slide 11).
 const deskripsiMinimal = 15;
 

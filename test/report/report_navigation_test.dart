@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import 'package:sifasilitas/models/report_models.dart';
@@ -7,6 +8,7 @@ import 'package:sifasilitas/screens/home/pelapor_home.dart';
 import 'package:sifasilitas/screens/report/report_submitted_screen.dart';
 import 'package:sifasilitas/services/report_repository.dart';
 
+import 'fake_image_picker.dart';
 import 'fake_report_repository.dart';
 import 'fake_scanner_platform.dart';
 
@@ -38,8 +40,15 @@ void main() {
 
   Future<void> pumpHome(WidgetTester tester) async {
     await tester.pumpWidget(
-      Provider<ReportRepository>.value(
-        value: FakeReportRepository(locations: const [_gda201]),
+      MultiProvider(
+        providers: [
+          Provider<ReportRepository>.value(
+            value: FakeReportRepository(locations: const [_gda201]),
+          ),
+          Provider<ImagePicker>.value(
+            value: FakeImagePicker()..hasil = XFile('/tmp/sifasilitas_uji.jpg'),
+          ),
+        ],
         child: const MaterialApp(home: PelaporHome(user: _user)),
       ),
     );
@@ -76,7 +85,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('QR-GDA-201'), findsOneWidget);
 
-    // Tombol kirim memvalidasi form (langkah 5), jadi deskripsi diisi dulu.
+    // Tombol kirim memvalidasi form, jadi foto dan deskripsi diisi dulu.
+    await tester.tap(find.text('Ambil foto'));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextFormField),
       'Proyektor tidak menyala sejak Senin pagi.',

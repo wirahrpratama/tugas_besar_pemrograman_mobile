@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/report_models.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/app_top_bar.dart';
+import 'photo_picker_field.dart';
 import 'report_form_logic.dart';
 import 'report_submitted_screen.dart';
 
@@ -33,6 +37,28 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   /// submit gagal, error diperbarui setiap kali pengguna mengetik.
   AutovalidateMode _autovalidateMode = AutovalidateMode.disabled;
 
+  /// Bukan service tim, jadi tidak ada di `main.dart`: di app asli selalu
+  /// `ImagePicker()`. Lookup nullable ke Provider hanya agar test bisa
+  /// memasang picker palsu (lihat test/report/fake_image_picker.dart).
+  late final ImagePicker _picker;
+
+  /// Foto terpilih. `XFile` hanya berlaku selama sesi app; langkah 8
+  /// mengunggahnya lewat `PhotoStore.uploadPhoto(File(_foto!.path))`.
+  XFile? _foto;
+
+  /// True selama kamera/galeri terbuka; mencegah picker dibuka dua kali.
+  bool _sedangMemilihFoto = false;
+
+  /// Kunci ke FormField foto, untuk memberi tahu Form bahwa nilainya berubah
+  /// (didChange) sehingga error foto ikut diperbarui seperti field teks.
+  final _fotoFieldKey = GlobalKey<FormFieldState<XFile>>();
+
+  @override
+  void initState() {
+    super.initState();
+    _picker = context.read<ImagePicker?>() ?? ImagePicker();
+  }
+
   @override
   void dispose() {
     _deskripsi.dispose();
@@ -40,8 +66,41 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   /// True bila ada isian yang akan hilang kalau layar ditutup.
-  /// TODO(langkah 6): ikut true bila foto sudah dipilih.
-  bool get _adaIsian => _deskripsi.text.trim().isNotEmpty;
+  bool get _adaIsian => _foto != null || _deskripsi.text.trim().isNotEmpty;
+
+  Future<void> _pilihFoto(ImageSource source) async {
+    if (_sedangMemilihFoto) return;
+    setState(() => _sedangMemilihFoto = true);
+
+    XFile? hasil;
+    String? pesanError;
+    try {
+      // Tanpa imageQuality/maxWidth: layar tidak mengompres, PhotoStore yang
+      // mengompres saat upload. requestFullMetadata: false menghindari izin
+      // Photo Library tambahan di iOS (metadata EXIF tidak kita pakai).
+      hasil = await _picker.pickImage(
+        source: source,
+        requestFullMetadata: false,
+      );
+    } on PlatformException catch (e) {
+      pesanError = pesanGagalAmbilFoto(e.code, source);
+    } on Exception {
+      pesanError = pesanGagalAmbilFoto('', source);
+    }
+    if (!mounted) return;
+
+    // hasil null = pengguna membatalkan: foto lama tetap dipakai.
+    setState(() {
+      _sedangMemilihFoto = false;
+      if (hasil != null) _foto = hasil;
+    });
+    if (hasil != null) _fotoFieldKey.currentState?.didChange(hasil);
+    if (pesanError != null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(pesanError)));
+    }
+  }
 
   void _kirim() {
     // Tutup keyboard supaya pesan error dan tombol tidak tertutup.
@@ -87,7 +146,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Buang laporan ini?'),
-        content: const Text('Deskripsi yang sudah ditulis akan hilang.'),
+        content: const Text('Foto dan deskripsi yang sudah diisi akan hilang.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -157,10 +216,25 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                           onChange: () => Navigator.of(context).maybePop(),
                         ),
                         const SizedBox(height: AppSpacing.xl),
-                        const _PlaceholderSection(
-                          judul: 'Foto kerusakan',
-                          keterangan: 'Langkah 6',
+                        Text(
+                          'Foto kerusakan',
+                          style: theme.textTheme.titleMedium,
                         ),
+                        const SizedBox(height: AppSpacing.sm),
+                        // FormField agar foto ikut validate() dan
+                        // AutovalidateMode yang sama dengan deskripsi.
+                        // Nilai sebenarnya tetap _foto di State.
+                        FormField<XFile>(
+                          key: _fotoFieldKey,
+                          validator: (_) => validasiFoto(_foto),
+                          builder: (field) => PhotoPickerField(
+                            foto: _foto,
+                            busy: _sedangMemilihFoto,
+                            errorText: field.errorText,
+                            onPick: _pilihFoto,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
                         Text(
                           'Deskripsi kerusakan',
                           style: theme.textTheme.titleMedium,
