@@ -76,6 +76,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('QR-GDA-201'), findsOneWidget);
 
+    // Tombol kirim memvalidasi form (langkah 5), jadi deskripsi diisi dulu.
+    await tester.enterText(
+      find.byType(TextFormField),
+      'Proyektor tidak menyala sejak Senin pagi.',
+    );
+    await tester.ensureVisible(find.text('Kirim (contoh, sementara)'));
     await tester.tap(find.text('Kirim (contoh, sementara)'));
     await tester.pumpAndSettle();
     expect(find.text('CONTOH-0001'), findsOneWidget);
