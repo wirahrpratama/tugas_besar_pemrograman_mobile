@@ -35,6 +35,25 @@ class FakeReportRepository implements ReportRepository {
     return _byKode[kodeRuangan.trim()];
   }
 
+  // --- Kategori (langkah 7) ---
+  // Field, bukan parameter konstruktor, supaya tidak bentrok dengan
+  // perubahan konstruktor di branch langkah 4 (pilih ruangan manual).
+
+  /// Master kategori yang dipancarkan `watchCategories`.
+  List<FacilityCategory> categories = const [];
+
+  /// Bila diisi, `watchCategories` mengembalikan stream ini (loading/error).
+  Stream<List<FacilityCategory>>? categoriesStream;
+
+  /// Jumlah panggilan `watchCategories` (untuk menguji tombol Coba lagi).
+  int watchCategoriesCalls = 0;
+
+  @override
+  Stream<List<FacilityCategory>> watchCategories() {
+    watchCategoriesCalls++;
+    return categoriesStream ?? Stream.value(categories);
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

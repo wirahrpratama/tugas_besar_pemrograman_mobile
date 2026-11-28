@@ -1,9 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../theme/app_spacing.dart';
+import '../../widgets/app_button.dart';
 
 /// Tampilan bagian "Foto kerusakan": pratinjau atau area kosong, dua tombol
 /// sumber foto, lalu teks bantu atau pesan error.
@@ -35,10 +37,6 @@ class PhotoPickerField extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final error = errorText;
     final foto = this.foto;
-    final buttonStyle = OutlinedButton.styleFrom(
-      minimumSize: const Size(0, 48),
-    );
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -63,26 +61,21 @@ class PhotoPickerField extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                style: buttonStyle,
-                onPressed: busy ? null : () => onPick(ImageSource.camera),
-                icon: const Icon(Icons.photo_camera_outlined),
-                label: Text(foto == null ? 'Ambil foto' : 'Ambil ulang'),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: OutlinedButton.icon(
-                style: buttonStyle,
-                onPressed: busy ? null : () => onPick(ImageSource.gallery),
-                icon: const Icon(Icons.photo_library_outlined),
-                label: const Text('Pilih dari galeri'),
-              ),
-            ),
-          ],
+        // Ditumpuk vertikal, lebar penuh: AppButton tidak memotong label,
+        // jadi dua tombol berdampingan overflow di HP 360 dp (terlebih bila
+        // ukuran huruf sistem diperbesar). Dibuktikan oleh test 360 dp.
+        AppButton(
+          variant: AppButtonVariant.outline,
+          icon: Icons.photo_camera_outlined,
+          label: foto == null ? 'Ambil foto' : 'Ambil ulang',
+          onPressed: busy ? null : () => onPick(ImageSource.camera),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        AppButton(
+          variant: AppButtonVariant.outline,
+          icon: Icons.photo_library_outlined,
+          label: 'Pilih dari galeri',
+          onPressed: busy ? null : () => onPick(ImageSource.gallery),
         ),
         const SizedBox(height: AppSpacing.xs),
         // Error memakai ikon + teks, bukan hanya warna bingkai (slide 26).
@@ -133,7 +126,9 @@ class _EmptyPhoto extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text(
             'Belum ada foto',
-            style: TextStyle(color: colorScheme.onSurfaceVariant),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -155,25 +150,44 @@ class _Preview extends StatelessWidget {
         // seukuran tampilan saja supaya hemat memori; file aslinya TIDAK
         // diubah (kompresi tetap tugas PhotoStore saat upload).
         final dpr = MediaQuery.devicePixelRatioOf(context);
-        return Image.file(
-          File(path),
-          key: const ValueKey('foto-pratinjau'),
-          width: double.infinity,
-          height: constraints.maxHeight,
-          fit: BoxFit.cover,
-          cacheWidth: (constraints.maxWidth * dpr).round(),
-          semanticLabel: 'Pratinjau foto kerusakan',
-          errorBuilder: (context, _, _) => ColoredBox(
-            color: colorScheme.surfaceContainerHighest,
-            child: Center(
-              child: Text(
-                'Pratinjau tidak dapat ditampilkan. Coba ambil ulang.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
+        final cacheWidth = (constraints.maxWidth * dpr).round();
+        Widget gagal(BuildContext context, Object _, StackTrace? _) =>
+            ColoredBox(
+              color: colorScheme.surfaceContainerHighest,
+              child: Center(
+                child: Text(
+                  'Pratinjau tidak dapat ditampilkan. Coba ambil ulang.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
-            ),
-          ),
-        );
+            );
+        // Image.file tidak didukung di Flutter Web; di web `XFile.path`
+        // berupa URL blob sehingga dibuka dengan Image.network (anjuran
+        // dokumentasi image_picker). Target utama tetap Android.
+        return kIsWeb
+            ? Image.network(
+                path,
+                key: const ValueKey('foto-pratinjau'),
+                width: double.infinity,
+                height: constraints.maxHeight,
+                fit: BoxFit.cover,
+                cacheWidth: cacheWidth,
+                semanticLabel: 'Pratinjau foto kerusakan',
+                errorBuilder: gagal,
+              )
+            : Image.file(
+                File(path),
+                key: const ValueKey('foto-pratinjau'),
+                width: double.infinity,
+                height: constraints.maxHeight,
+                fit: BoxFit.cover,
+                cacheWidth: cacheWidth,
+                semanticLabel: 'Pratinjau foto kerusakan',
+                errorBuilder: gagal,
+              );
       },
     );
   }

@@ -3,6 +3,9 @@ library;
 
 import 'package:image_picker/image_picker.dart';
 
+import '../../models/report_models.dart';
+import '../../services/ai_classifier_service.dart';
+
 /// Validator foto kerusakan: wajib ada.
 String? validasiFoto(XFile? foto) =>
     foto == null ? 'Foto kerusakan wajib dilampirkan.' : null;
@@ -51,4 +54,44 @@ String? validasiDeskripsi(String? value) {
     return 'Deskripsi maksimal $deskripsiMaksimal karakter.';
   }
   return null;
+}
+
+/// Label tampilan untuk kode prioritas (`rendah|sedang|tinggi|darurat`).
+String labelPrioritas(String prioritas) {
+  final kode = prioritas.trim().toLowerCase();
+  return switch (kode) {
+    'darurat' => 'Darurat',
+    'tinggi' => 'Tinggi',
+    'sedang' => 'Sedang',
+    'rendah' => 'Rendah',
+    '' => '-',
+    _ => prioritas.trim(),
+  };
+}
+
+/// Nilai `aiSuggestedPriority` untuk `ReportService.submitReport`.
+///
+/// Aturan (spesifikasi layar): prioritas AI hanya dipakai bila pelapor TIDAK
+/// mengganti kategori saran. Bila kategori diganti, kirim `null` sehingga
+/// service memakai `prioritasDefault` kategori pilihan pelapor.
+String? prioritasUntukDikirim(
+  DamageClassificationResult? saran,
+  String? kategoriTerpilihId,
+) {
+  if (saran == null || kategoriTerpilihId == null) return null;
+  if (saran.categoryId != kategoriTerpilihId) return null;
+  final prioritas = saran.prioritas.trim();
+  return prioritas.isEmpty ? null : prioritas;
+}
+
+/// Prioritas yang akan tercatat di tiket, sama persis dengan logika
+/// `submitReport` (trim + huruf kecil, kosong → default kategori), supaya
+/// chip di layar tidak berbeda dengan hasil di server.
+({String prioritas, bool dariAi}) prioritasTampil(
+  DamageClassificationResult? saran,
+  FacilityCategory kategori,
+) {
+  final ai = prioritasUntukDikirim(saran, kategori.id);
+  if (ai != null) return (prioritas: ai.toLowerCase(), dariAi: true);
+  return (prioritas: kategori.prioritasDefault, dariAi: false);
 }

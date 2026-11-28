@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:sifasilitas/models/report_models.dart';
+import 'package:sifasilitas/services/ai_classifier_service.dart';
 import 'package:sifasilitas/screens/report/report_form_logic.dart';
 
 void main() {
@@ -77,6 +79,63 @@ void main() {
         pesanGagalAmbilFoto('lainnya', ImageSource.gallery),
         'Gagal membuka galeri. Silakan coba lagi.',
       );
+    });
+  });
+
+  group('aturan prioritas', () {
+    const saran = DamageClassificationResult(
+      categoryId: 'cat_proyektor',
+      prioritas: 'Tinggi ',
+      alasanSingkat: '-',
+    );
+    const toilet = FacilityCategory(
+      id: 'cat_toilet',
+      namaObjek: 'Toilet',
+      prioritasDefault: 'sedang',
+      targetSlaJam: 8,
+    );
+    const proyektor = FacilityCategory(
+      id: 'cat_proyektor',
+      namaObjek: 'Proyektor',
+      prioritasDefault: 'rendah',
+      targetSlaJam: 4,
+    );
+
+    test('kategori saran tidak diubah: prioritas AI dikirim', () {
+      expect(prioritasUntukDikirim(saran, 'cat_proyektor'), 'Tinggi');
+    });
+
+    test('kategori diganti atau belum ada saran: null', () {
+      expect(prioritasUntukDikirim(saran, 'cat_toilet'), isNull);
+      expect(prioritasUntukDikirim(null, 'cat_proyektor'), isNull);
+      expect(prioritasUntukDikirim(saran, null), isNull);
+    });
+
+    test('prioritas AI kosong dianggap tidak ada', () {
+      const kosong = DamageClassificationResult(
+        categoryId: 'cat_proyektor',
+        prioritas: '  ',
+        alasanSingkat: '-',
+      );
+      expect(prioritasUntukDikirim(kosong, 'cat_proyektor'), isNull);
+    });
+
+    test('prioritasTampil sama dengan logika submitReport', () {
+      expect(prioritasTampil(saran, proyektor), (
+        prioritas: 'tinggi',
+        dariAi: true,
+      ));
+      expect(prioritasTampil(saran, toilet), (
+        prioritas: 'sedang',
+        dariAi: false,
+      ));
+    });
+
+    test('labelPrioritas', () {
+      expect(labelPrioritas('darurat'), 'Darurat');
+      expect(labelPrioritas(' TINGGI '), 'Tinggi');
+      expect(labelPrioritas(''), '-');
+      expect(labelPrioritas('urgent'), 'urgent');
     });
   });
 }

@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 import 'package:sifasilitas/models/report_models.dart';
 import 'package:sifasilitas/screens/home/pelapor_home.dart';
 import 'package:sifasilitas/screens/report/report_submitted_screen.dart';
+import 'package:sifasilitas/services/ai_classifier_service.dart';
 import 'package:sifasilitas/services/report_repository.dart';
 
+import 'fake_ai_classifier.dart';
 import 'fake_image_picker.dart';
 import 'fake_report_repository.dart';
 import 'fake_scanner_platform.dart';
@@ -43,8 +45,17 @@ void main() {
       MultiProvider(
         providers: [
           Provider<ReportRepository>.value(
-            value: FakeReportRepository(locations: const [_gda201]),
+            value: FakeReportRepository(locations: const [_gda201])
+              ..categories = const [
+                FacilityCategory(
+                  id: 'cat_proyektor',
+                  namaObjek: 'Proyektor',
+                  prioritasDefault: 'tinggi',
+                  targetSlaJam: 4,
+                ),
+              ],
           ),
+          Provider<AiClassifierService>.value(value: FakeAiClassifier()),
           Provider<ImagePicker>.value(
             value: FakeImagePicker()..hasil = XFile('/tmp/sifasilitas_uji.jpg'),
           ),
@@ -92,6 +103,9 @@ void main() {
       find.byType(TextFormField),
       'Proyektor tidak menyala sejak Senin pagi.',
     );
+    // "Selesai" di keyboard: saran AI mengisi kategori.
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Kirim (contoh, sementara)'));
     await tester.tap(find.text('Kirim (contoh, sementara)'));
     await tester.pumpAndSettle();

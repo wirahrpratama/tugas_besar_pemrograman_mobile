@@ -1,17 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/report_models.dart';
+import '../../services/ai_classifier_service.dart';
+import '../../services/report_repository.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/app_button.dart';
 import '../../widgets/app_top_bar.dart';
+import 'category_section.dart';
 import 'photo_picker_field.dart';
 import 'report_form_logic.dart';
+import 'report_section_header.dart';
 import 'report_submitted_screen.dart';
 
-/// Layar form laporan: lokasi, foto (langkah 6), deskripsi, saran AI
-/// (langkah 7), lalu kirim (langkah 8).
+/// Layar form laporan: lokasi, foto, deskripsi, kategori + saran AI, lalu
+/// kirim (langkah 8).
 class CreateReportScreen extends StatefulWidget {
   const CreateReportScreen({
     super.key,
@@ -53,16 +60,142 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   /// (didChange) sehingga error foto ikut diperbarui seperti field teks.
   final _fotoFieldKey = GlobalKey<FormFieldState<XFile>>();
 
+  // --- Deskripsi & saran AI (langkah 7) ---
+
+  /// Saat field deskripsi kehilangan fokus, saran kategori diminta otomatis.
+  final _deskripsiFocus = FocusNode();
+  final _deskripsiFieldKey = GlobalKey<FormFieldState<String>>();
+  final _kategoriFieldKey = GlobalKey<FormFieldState<String>>();
+
+  /// Master kategori. Didengarkan lewat StreamSubscription (bukan
+  /// StreamBuilder) karena daftar ini juga dibutuhkan saat tombol Kirim
+  /// ditekan, di luar builder. Subscription wajib di-cancel di dispose.
+  StreamSubscription<List<FacilityCategory>>? _kategoriSub;
+  List<FacilityCategory>? _kategoriList;
+  bool _gagalMemuatKategori = false;
+
+  DamageClassificationResult? _saran;
+  String? _kategoriId;
+
+  /// True setelah pelapor memilih kategori sendiri. Saran otomatis (saat
+  /// fokus lepas) tidak lagi menimpa pilihannya; tombol "Minta saran" tetap
+  /// menerapkan saran karena itu permintaan eksplisit.
+  bool _kategoriDipilihManual = false;
+
+  bool _memintaSaran = false;
+  String? _pesanSaranGagal;
+
+  /// Deskripsi terakhir yang dikirim ke classifier, agar fokus lepas tanpa
+  /// perubahan teks tidak memanggil AI lagi.
+  String? _teksTerakhirDiklasifikasi;
+
+  /// Nomor permintaan terbaru; hasil permintaan lama yang datang terlambat
+  /// diabaikan supaya tidak menimpa hasil yang lebih baru.
+  int _nomorPermintaan = 0;
+
   @override
   void initState() {
     super.initState();
     _picker = context.read<ImagePicker?>() ?? ImagePicker();
+    _deskripsiFocus.addListener(_onFokusDeskripsiBerubah);
+    _muatKategori();
   }
 
   @override
   void dispose() {
+    _kategoriSub?.cancel();
+    _deskripsiFocus.dispose();
     _deskripsi.dispose();
     super.dispose();
+  }
+
+  void _muatKategori() {
+    _kategoriSub?.cancel();
+    _kategoriSub = context.read<ReportRepository>().watchCategories().listen(
+      (list) => setState(() {
+        _kategoriList = list;
+        _gagalMemuatKategori = false;
+      }),
+      onError: (Object _) => setState(() => _gagalMemuatKategori = true),
+    );
+  }
+
+  void _muatUlangKategori() {
+    setState(() {
+      _kategoriList = null;
+      _gagalMemuatKategori = false;
+    });
+    _muatKategori();
+  }
+
+  /// Kategori terpilih yang benar-benar ada di master (null bila belum ada,
+  /// masih memuat, atau id saran tidak ditemukan).
+  FacilityCategory? get _kategoriTerpilih =>
+      _kategoriList?.where((c) => c.id == _kategoriId).firstOrNull;
+
+  void _onFokusDeskripsiBerubah() {
+    if (_deskripsiFocus.hasFocus) return;
+    final teks = _deskripsi.text.trim();
+    if (validasiDeskripsi(teks) != null) return;
+    if (teks == _teksTerakhirDiklasifikasi) return;
+    unawaited(_mintaSaran(terapkan: !_kategoriDipilihManual));
+  }
+
+  void _tekanMintaSaran() {
+    // Validasi field deskripsi saja: error tampil inline di field itu.
+    if (!(_deskripsiFieldKey.currentState?.validate() ?? false)) return;
+    unawaited(_mintaSaran(terapkan: true));
+  }
+
+  Future<void> _mintaSaran({required bool terapkan}) async {
+    // Ambil service SEBELUM await (context belum tentu masih terpasang).
+    final ai = context.read<AiClassifierService>();
+    final teks = _deskripsi.text.trim();
+    final nomor = ++_nomorPermintaan;
+    _teksTerakhirDiklasifikasi = teks;
+    setState(() {
+      _memintaSaran = true;
+      _pesanSaranGagal = null;
+    });
+
+    DamageClassificationResult? hasil;
+    try {
+      // Service sudah jatuh ke heuristik offline bila Gemini gagal, jadi
+      // exception di sini seharusnya jarang; tetap ditangani.
+      hasil = await ai.classifyComplaint(teks);
+    } on Exception {
+      hasil = null;
+    }
+    if (!mounted || nomor != _nomorPermintaan) return;
+
+    setState(() {
+      _memintaSaran = false;
+      if (hasil == null) {
+        _pesanSaranGagal =
+            'Saran AI tidak tersedia. Pilih fasilitas secara manual.';
+        _teksTerakhirDiklasifikasi = null;
+        return;
+      }
+      _saran = hasil;
+      if (terapkan) {
+        _kategoriId = hasil.categoryId;
+        _kategoriDipilihManual = false;
+      }
+    });
+    // Bila error "Pilih kategori" sudah tampil (submit gagal sebelumnya),
+    // perbarui setelah frame ini, saat dropdown sudah memakai nilai saran.
+    if (terapkan && _autovalidateMode != AutovalidateMode.disabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _kategoriFieldKey.currentState?.validate();
+      });
+    }
+  }
+
+  void _onKategoriChanged(String? id) {
+    setState(() {
+      _kategoriId = id;
+      _kategoriDipilihManual = true;
+    });
   }
 
   /// True bila ada isian yang akan hilang kalau layar ditutup.
@@ -105,10 +238,13 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   void _kirim() {
     // Tutup keyboard supaya pesan error dan tombol tidak tertutup.
     FocusScope.of(context).unfocus();
-    if (!_formKey.currentState!.validate()) {
+    final kategori = _kategoriTerpilih;
+    if (!_formKey.currentState!.validate() || kategori == null) {
       setState(() => _autovalidateMode = AutovalidateMode.onUserInteraction);
       return;
     }
+    // TODO(langkah 8): submitReport(category: kategori, aiSuggestedPriority:
+    // prioritasUntukDikirim(_saran, kategori.id), ...).
     _kirimContoh();
   }
 
@@ -164,7 +300,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     // canPop: false = setiap upaya menutup layar lewat _onPop dulu, yang
     // memutuskan perlu konfirmasi atau tidak. Konsekuensi: gesture geser
     // kembali iOS dan animasi predictive back Android tidak aktif di sini.
@@ -208,19 +343,20 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('Lokasi', style: theme.textTheme.titleMedium),
-                        const SizedBox(height: AppSpacing.sm),
+                        const ReportSectionHeader(
+                          icon: Icons.place_outlined,
+                          title: 'Lokasi',
+                        ),
                         _LocationCard(
                           location: widget.location,
                           // maybePop agar tetap lewat konfirmasi di _onPop.
                           onChange: () => Navigator.of(context).maybePop(),
                         ),
                         const SizedBox(height: AppSpacing.xl),
-                        Text(
-                          'Foto kerusakan',
-                          style: theme.textTheme.titleMedium,
+                        const ReportSectionHeader(
+                          icon: Icons.photo_camera_outlined,
+                          title: 'Foto kerusakan',
                         ),
-                        const SizedBox(height: AppSpacing.sm),
                         // FormField agar foto ikut validate() dan
                         // AutovalidateMode yang sama dengan deskripsi.
                         // Nilai sebenarnya tetap _foto di State.
@@ -235,13 +371,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                           ),
                         ),
                         const SizedBox(height: AppSpacing.xl),
-                        Text(
-                          'Deskripsi kerusakan',
-                          style: theme.textTheme.titleMedium,
+                        const ReportSectionHeader(
+                          icon: Icons.notes_outlined,
+                          title: 'Deskripsi kerusakan',
                         ),
-                        const SizedBox(height: AppSpacing.sm),
                         TextFormField(
+                          key: _deskripsiFieldKey,
                           controller: _deskripsi,
+                          focusNode: _deskripsiFocus,
                           validator: validasiDeskripsi,
                           keyboardType: TextInputType.multiline,
                           textInputAction: TextInputAction.done,
@@ -262,19 +399,28 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                           ),
                         ),
                         const SizedBox(height: AppSpacing.xl),
-                        const _PlaceholderSection(
-                          judul: 'Saran kategori dari AI',
-                          keterangan: 'Langkah 7',
+                        const ReportSectionHeader(
+                          icon: Icons.category_outlined,
+                          title: 'Fasilitas & prioritas',
                         ),
-                        const SizedBox(height: AppSpacing.sm),
+                        CategorySection(
+                          fieldKey: _kategoriFieldKey,
+                          kategoriList: _kategoriList,
+                          gagalMemuatKategori: _gagalMemuatKategori,
+                          onMuatUlangKategori: _muatUlangKategori,
+                          kategoriId: _kategoriTerpilih?.id,
+                          onKategoriChanged: _onKategoriChanged,
+                          saran: _saran,
+                          memintaSaran: _memintaSaran,
+                          pesanSaranGagal: _pesanSaranGagal,
+                          onMintaSaran: _tekanMintaSaran,
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
                         // TODO(langkah 8): ganti dengan LoadingButton
                         // "Kirim laporan" yang memanggil submitReport.
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                          ),
+                        AppButton(
+                          label: 'Kirim (contoh, sementara)',
                           onPressed: _kirim,
-                          child: const Text('Kirim (contoh, sementara)'),
                         ),
                       ],
                     ),
@@ -308,34 +454,6 @@ class _LocationCard extends StatelessWidget {
           'Lantai ${location.lantai}',
         ),
         trailing: TextButton(onPressed: onChange, child: const Text('Ubah')),
-      ),
-    );
-  }
-}
-
-class _PlaceholderSection extends StatelessWidget {
-  const _PlaceholderSection({required this.judul, required this.keterangan});
-
-  final String judul;
-  final String keterangan;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xl),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(judul, style: theme.textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Belum dibuat ($keterangan).',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
       ),
     );
   }

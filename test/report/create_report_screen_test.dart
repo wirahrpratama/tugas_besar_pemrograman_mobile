@@ -8,8 +8,12 @@ import 'package:provider/provider.dart';
 import 'package:sifasilitas/models/report_models.dart';
 import 'package:sifasilitas/screens/report/create_report_screen.dart';
 import 'package:sifasilitas/screens/report/report_submitted_screen.dart';
+import 'package:sifasilitas/services/ai_classifier_service.dart';
+import 'package:sifasilitas/services/report_repository.dart';
 
+import 'fake_ai_classifier.dart';
 import 'fake_image_picker.dart';
+import 'fake_report_repository.dart';
 
 const _user = AppUser(
   uid: 'u1',
@@ -32,20 +36,49 @@ const _kirim = 'Kirim (contoh, sementara)';
 const _wajib = 'Deskripsi kerusakan wajib diisi.';
 const _valid = 'Proyektor tidak menyala sejak Senin pagi.';
 const _fotoWajib = 'Foto kerusakan wajib dilampirkan.';
+const _kategoriWajib = 'Pilih fasilitas yang rusak.';
+
+const _proyektor = FacilityCategory(
+  id: 'cat_proyektor',
+  namaObjek: 'Proyektor',
+  prioritasDefault: 'tinggi',
+  targetSlaJam: 4,
+);
+const _toilet = FacilityCategory(
+  id: 'cat_toilet',
+  namaObjek: 'Toilet',
+  prioritasDefault: 'sedang',
+  targetSlaJam: 8,
+);
+const _lampu = FacilityCategory(
+  id: 'cat_lampu',
+  namaObjek: 'Lampu',
+  prioritasDefault: 'darurat',
+  targetSlaJam: 2,
+);
 
 void main() {
   late FakeImagePicker picker;
+  late FakeReportRepository repo;
+  late FakeAiClassifier ai;
 
   setUp(() {
     // Path tidak harus ada: pratinjau gagal dimuat ditangani errorBuilder.
     picker = FakeImagePicker()..hasil = XFile('/tmp/sifasilitas_uji.jpg');
+    repo = FakeReportRepository()
+      ..categories = const [_lampu, _proyektor, _toilet];
+    ai = FakeAiClassifier();
   });
 
   /// Form dibuka dari halaman awal ("pemindai" palsu), supaya pop bisa diuji.
   Future<void> pumpForm(WidgetTester tester) async {
     await tester.pumpWidget(
-      Provider<ImagePicker>.value(
-        value: picker,
+      MultiProvider(
+        providers: [
+          Provider<ImagePicker>.value(value: picker),
+          Provider<ReportRepository>.value(value: repo),
+          Provider<AiClassifierService>.value(value: ai),
+        ],
         child: MaterialApp(
           home: Builder(
             builder: (context) => Scaffold(
@@ -84,6 +117,22 @@ void main() {
   }
 
   Finder pratinjau() => find.byKey(const ValueKey('foto-pratinjau'));
+
+  /// Tekan "Selesai" di keyboard: field deskripsi kehilangan fokus, sama
+  /// seperti di HP, sehingga saran AI otomatis diminta.
+  Future<void> selesaiMengetik(WidgetTester tester) async {
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> pilihKategori(WidgetTester tester, String nama) async {
+    final dropdown = find.byType(DropdownButtonFormField<String>);
+    await tester.ensureVisible(dropdown);
+    await tester.tap(dropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(nama).last);
+    await tester.pumpAndSettle();
+  }
 
   testWidgets('kartu lokasi, teks bantu, dan penghitung tampil', (
     tester,
@@ -137,6 +186,7 @@ void main() {
 
     await tapTombol(tester, 'Ambil foto');
     await tester.enterText(deskripsi(), _valid);
+    await selesaiMengetik(tester);
     await tapKirim(tester);
 
     expect(find.byType(ReportSubmittedScreen), findsOneWidget);
@@ -294,6 +344,264 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Buang laporan ini?'), findsOneWidget);
+    });
+  });
+
+  group('kategori & saran AI', () {
+    testWidgets('fokus lepas: saran terisi, chip prioritas AI + target SLA', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      await tester.enterText(deskripsi(), _valid);
+      await selesaiMengetik(tester);
+
+      expect(ai.permintaan, [_valid]);
+      expect(find.text('Saran AI: Proyektor'), findsOneWidget);
+      expect(
+        find.text('Proyektor dibutuhkan langsung untuk perkuliahan.'),
+        findsOneWidget,
+      );
+      // Dropdown terisi kategori saran.
+      expect(
+        find.descendant(
+          of: find.byType(DropdownButtonFormField<String>),
+          matching: find.text('Proyektor'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Tinggi'), findsOneWidget);
+      expect(
+        find.text('Target penanganan 4 jam · disarankan AI'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'deskripsi belum valid atau tidak berubah: AI tidak dipanggil',
+      (tester) async {
+        await pumpForm(tester);
+
+        await tester.enterText(deskripsi(), 'rusak');
+        await selesaiMengetik(tester);
+        expect(ai.permintaan, isEmpty);
+
+        await tester.enterText(deskripsi(), _valid);
+        await selesaiMengetik(tester);
+        await tester.tap(deskripsi());
+        await selesaiMengetik(tester);
+        expect(ai.permintaan, hasLength(1));
+      },
+    );
+
+    testWidgets('ganti kategori: prioritas bawaan fasilitas', (tester) async {
+      await pumpForm(tester);
+      await tester.enterText(deskripsi(), _valid);
+      await selesaiMengetik(tester);
+
+      await pilihKategori(tester, 'Toilet');
+
+      expect(find.text('Sedang'), findsOneWidget);
+      expect(
+        find.text('Target penanganan 8 jam · bawaan fasilitas'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('pilihan manual tidak ditimpa saran otomatis berikutnya', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+      await tester.enterText(deskripsi(), _valid);
+      await selesaiMengetik(tester);
+      await pilihKategori(tester, 'Toilet');
+
+      ai.hasil = const DamageClassificationResult(
+        categoryId: 'cat_lampu',
+        prioritas: 'darurat',
+        alasanSingkat: 'Indikasi korsleting.',
+      );
+      await tester.enterText(
+        deskripsi(),
+        'Lampu berkedip dan ada percikan api.',
+      );
+      await selesaiMengetik(tester);
+
+      expect(find.text('Saran AI: Lampu'), findsOneWidget);
+      expect(find.text('Sedang'), findsOneWidget);
+
+      // Tombol eksplisit tetap menerapkan saran.
+      await tapTombol(tester, 'Minta saran ulang');
+      expect(find.text('Darurat'), findsOneWidget);
+      expect(
+        find.text('Target penanganan 2 jam · disarankan AI'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tombol minta saran dengan deskripsi kosong: error inline', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      await tapTombol(tester, 'Minta saran AI');
+
+      expect(find.text(_wajib), findsOneWidget);
+      expect(ai.permintaan, isEmpty);
+    });
+
+    testWidgets('indikator selama menunggu; hasil lama diabaikan', (
+      tester,
+    ) async {
+      final lambat = Completer<DamageClassificationResult>();
+      ai.handler = (_) => lambat.future;
+      await pumpForm(tester);
+
+      await tester.enterText(deskripsi(), _valid);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.text('Meminta saran AI…'), findsOneWidget);
+
+      // Teks diubah; permintaan kedua langsung selesai dengan Toilet.
+      ai.handler = (_) async => const DamageClassificationResult(
+        categoryId: 'cat_toilet',
+        prioritas: 'sedang',
+        alasanSingkat: 'Masalah sanitasi.',
+      );
+      await tester.enterText(deskripsi(), 'Keran toilet bocor sejak pagi ini.');
+      await selesaiMengetik(tester);
+      expect(find.text('Saran AI: Toilet'), findsOneWidget);
+
+      // Respons lama baru datang: tidak boleh menimpa.
+      lambat.complete(ai.hasil);
+      await tester.pumpAndSettle();
+      expect(find.text('Saran AI: Toilet'), findsOneWidget);
+      expect(find.text('Saran AI: Proyektor'), findsNothing);
+    });
+
+    testWidgets('classifier gagal: pesan ramah, dropdown tetap bisa dipakai', (
+      tester,
+    ) async {
+      ai.handler = (_) => Future.error(Exception('HTTP 500 detail teknis'));
+      await pumpForm(tester);
+
+      await tester.enterText(deskripsi(), _valid);
+      await selesaiMengetik(tester);
+
+      expect(
+        find.text('Saran AI tidak tersedia. Pilih fasilitas secara manual.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('HTTP 500'), findsNothing);
+      await pilihKategori(tester, 'Lampu');
+      expect(find.text('Darurat'), findsOneWidget);
+    });
+
+    testWidgets('kategori saran tidak ada di master: dropdown kosong', (
+      tester,
+    ) async {
+      ai.hasil = const DamageClassificationResult(
+        categoryId: 'cat_ac',
+        prioritas: 'tinggi',
+        alasanSingkat: 'AC.',
+      );
+      await pumpForm(tester);
+
+      await tester.enterText(deskripsi(), _valid);
+      await selesaiMengetik(tester);
+
+      expect(find.textContaining('tidak ada di daftar'), findsOneWidget);
+      expect(find.text('Pilih fasilitas'), findsOneWidget);
+    });
+
+    testWidgets('submit tanpa kategori: error, hilang saat saran datang', (
+      tester,
+    ) async {
+      final lambat = Completer<DamageClassificationResult>();
+      ai.handler = (_) => lambat.future;
+      await pumpForm(tester);
+      await tapTombol(tester, 'Ambil foto');
+      await tester.enterText(deskripsi(), _valid);
+
+      // Kirim saat field masih fokus: fokus lepas memicu saran (masih
+      // menunggu), validasi kategori gagal.
+      await tester.ensureVisible(find.text(_kirim));
+      await tester.tap(find.text(_kirim));
+      await tester.pump();
+      expect(find.text(_kategoriWajib), findsOneWidget);
+      expect(find.byType(ReportSubmittedScreen), findsNothing);
+
+      lambat.complete(ai.hasil);
+      await tester.pumpAndSettle();
+      expect(find.text(_kategoriWajib), findsNothing);
+    });
+
+    testWidgets('master kategori kosong: pesan data master', (tester) async {
+      repo.categories = const [];
+      await pumpForm(tester);
+
+      expect(
+        find.textContaining('Daftar fasilitas belum tersedia'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('gagal memuat kategori lalu Coba lagi', (tester) async {
+      repo.categoriesStream = Stream.error(Exception('unavailable'));
+      await pumpForm(tester);
+      expect(
+        find.textContaining('Gagal memuat daftar fasilitas'),
+        findsOneWidget,
+      );
+
+      repo.categoriesStream = null;
+      await tapTombol(tester, 'Coba lagi');
+
+      expect(repo.watchCategoriesCalls, 2);
+      expect(find.textContaining('Gagal memuat'), findsNothing);
+    });
+  });
+
+  group('tata letak & tipografi', () {
+    testWidgets('HP 360 dp: tidak ada overflow, judul section huruf besar', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpForm(tester);
+
+      // Overflow akan tercatat sebagai exception render.
+      expect(tester.takeException(), isNull);
+      expect(find.text('FOTO KERUSAKAN'), findsOneWidget);
+      expect(find.text('FASILITAS & PRIORITAS'), findsOneWidget);
+
+      await tapTombol(tester, 'Ambil foto');
+      await tester.enterText(deskripsi(), _valid);
+      await selesaiMengetik(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.text('Ambil ulang'), findsOneWidget);
+    });
+
+    testWidgets('nilai dropdown memakai gaya teks input (bodyLarge)', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+      await tester.enterText(deskripsi(), _valid);
+      await selesaiMengetik(tester);
+
+      final dropdown = tester.widget<DropdownButton<String>>(
+        find.byType(DropdownButton<String>),
+      );
+      final context = tester.element(find.byType(DropdownButton<String>));
+      expect(
+        dropdown.style?.fontSize,
+        Theme.of(context).textTheme.bodyLarge?.fontSize,
+      );
+      expect(
+        dropdown.style?.fontWeight,
+        Theme.of(context).textTheme.bodyLarge?.fontWeight,
+      );
     });
   });
 }
