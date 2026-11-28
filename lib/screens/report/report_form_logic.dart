@@ -142,3 +142,19 @@ String pesanGagalKirim(Object error, {required bool saatUpload}) {
       ? 'Gagal mengunggah foto. Coba lagi.'
       : 'Gagal mengirim laporan. Coba lagi.';
 }
+
+/// Tiga kemungkinan hasil `ReportService.submitReport`.
+enum VarianHasil { tiketBaru, digabung, sudahMendukung }
+
+/// Memetakan Map hasil `submitReport` ke varian layar hasil.
+///
+/// Memakai `== true` (bukan cast `as bool`) supaya map yang tidak lengkap
+/// tidak membuat crash: field yang hilang dianggap false → tiket baru.
+VarianHasil varianHasil(Map<String, dynamic> result) {
+  if (result['merged'] == true) {
+    return result['already_supported'] == true
+        ? VarianHasil.sudahMendukung
+        : VarianHasil.digabung;
+  }
+  return VarianHasil.tiketBaru;
+}

@@ -124,11 +124,4 @@ void main() {
     expect(find.text('Beranda Pelapor'), findsOneWidget);
     expect(find.byType(ReportSubmittedScreen), findsNothing);
   });
-
-  testWidgets('layar hasil tidak crash bila field map kosong', (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(home: ReportSubmittedScreen(result: {})),
-    );
-    expect(find.text('-'), findsNWidgets(2));
-  });
 }

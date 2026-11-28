@@ -210,4 +210,24 @@ void main() {
       );
     });
   });
+
+  group('varianHasil', () {
+    test('tiga varian sesuai map submitReport', () {
+      expect(varianHasil({'merged': false}), VarianHasil.tiketBaru);
+      expect(
+        varianHasil({'merged': true, 'already_supported': false}),
+        VarianHasil.digabung,
+      );
+      expect(
+        varianHasil({'merged': true, 'already_supported': true}),
+        VarianHasil.sudahMendukung,
+      );
+    });
+
+    test('map kosong atau tipe aneh: tiket baru, tidak crash', () {
+      expect(varianHasil({}), VarianHasil.tiketBaru);
+      expect(varianHasil({'merged': 'true'}), VarianHasil.tiketBaru);
+      expect(varianHasil({'merged': true}), VarianHasil.digabung);
+    });
+  });
 }

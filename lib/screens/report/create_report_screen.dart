@@ -316,9 +316,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         navigator.pushReplacement(
           MaterialPageRoute(
             builder: (_) => ReportSubmittedScreen(
-              userUid: widget.user.uid,
-              userName: widget.user.nama,
               result: hasil,
+              user: widget.user,
+              location: widget.location,
+              category: kategori,
+              prioritas: prioritasTampil(_saran, kategori).prioritas,
             ),
           ),
         ),
